@@ -1,0 +1,35 @@
+@import "tailwindcss";
+
+@theme {
+    --color-primary: #00356B;
+    --color-ai: #F59E0B;
+    --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+}
+
+/* Force the app to fill the screen to prevent scrolling issues */
+html,
+body {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    background-color: #f8fafc;
+    /* Light gray-blue background */
+    overflow: hidden;
+    /* Prevent body scroll, let containers handle it */
+}
+
+/* Standard resets */
+* {
+    box-sizing: border-box;
+    border-color: #e5e7eb;
+}
+
+/* Hide scrollbar for clean UI but allow scroll */
+.no-scrollbar::-webkit-scrollbar {
+    display: none;
+}
+
+.no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+}
