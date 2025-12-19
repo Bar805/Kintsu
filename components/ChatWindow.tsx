@@ -4,7 +4,8 @@ import { useState, useEffect, useRef } from 'react'
 import { createBrowserClient } from '@supabase/ssr'
 import { Message, ConversationWithDetails } from '@/types/database'
 import { sendMessage } from '@/app/actions/chat'
-import { ArrowLeft, Send, Sparkles, User, Info, Phone, Video } from 'lucide-react'
+import { generateTrioResponse } from '@/app/actions/ai'
+import { ArrowLeft, Sparkles, User, Info, Phone, Video } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import Link from 'next/link'
 
@@ -18,40 +19,28 @@ export default function ChatWindow({ conversation, initialMessages, currentUserI
     const [messages, setMessages] = useState<Message[]>(initialMessages)
     const [newMessage, setNewMessage] = useState('')
     const [isSending, setIsSending] = useState(false)
+    const [isAiLoading, setIsAiLoading] = useState(false)
     const endRef = useRef<HTMLDivElement>(null)
 
-    // Initialize Supabase client for Realtime
     const supabase = createBrowserClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL!,
         process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
     )
 
     useEffect(() => {
-        // Scroll to bottom on mount and when messages change
         endRef.current?.scrollIntoView({ behavior: 'smooth' })
     }, [messages])
 
     useEffect(() => {
-        // Realtime subscription
         const channel = supabase
             .channel(`chat:${conversation.id}`)
-            .on(
-                'postgres_changes',
-                {
-                    event: 'INSERT',
-                    schema: 'public',
-                    table: 'messages',
-                    filter: `conversation_id=eq.${conversation.id}`
-                },
-                (payload) => {
-                    const newMsg = payload.new as Message
-                    setMessages((current) => {
-                        // Prevent duplicates
-                        if (current.find(m => m.id === newMsg.id)) return current
-                        return [...current, newMsg]
-                    })
-                }
-            )
+            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `conversation_id=eq.${conversation.id}` }, (payload) => {
+                const newMsg = payload.new as Message
+                setMessages((current) => {
+                    if (current.find(m => m.id === newMsg.id)) return current
+                    return [...current, newMsg]
+                })
+            })
             .subscribe()
 
         return () => {
@@ -67,7 +56,6 @@ export default function ChatWindow({ conversation, initialMessages, currentUserI
         const tempId = crypto.randomUUID()
         const content = newMessage.trim()
 
-        // Optimistic update
         const optimisticMsg: Message = {
             id: tempId,
             conversation_id: conversation.id,
@@ -82,26 +70,35 @@ export default function ChatWindow({ conversation, initialMessages, currentUserI
 
         try {
             await sendMessage(conversation.id, content, tempId)
-
         } catch (err) {
             console.error('Failed to send:', err)
-            // Rollback on error
             setMessages(prev => prev.filter(m => m.id !== tempId))
-            setNewMessage(content) // Restore text
+            setNewMessage(content)
         } finally {
             setIsSending(false)
         }
     }
 
+    const handleAiTrigger = async () => {
+        if (isAiLoading) return
+        setIsAiLoading(true)
+        try {
+            await generateTrioResponse(conversation.id)
+        } catch (error) {
+            console.error('AI generation failed', error)
+        } finally {
+            setIsAiLoading(false)
+        }
+    }
+
     return (
         <div className="flex h-full flex-col bg-[#F8FAFC]">
-            {/* Header - iMessage style */}
+            {/* Header */}
             <div className="h-16 px-4 bg-white/80 backdrop-blur-md border-b border-gray-200 flex items-center justify-between sticky top-0 z-10">
                 <div className="flex items-center gap-3">
                     <Link href="/dashboard" className="md:hidden p-2 -ml-2 text-gray-500 hover:bg-gray-100 rounded-full">
                         <ArrowLeft size={22} />
                     </Link>
-
                     <div className="flex items-center gap-3">
                         <div className="relative">
                             <div className="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center text-gray-500 overflow-hidden border border-gray-100">
@@ -111,7 +108,6 @@ export default function ChatWindow({ conversation, initialMessages, currentUserI
                                     <User size={20} />
                                 )}
                             </div>
-                            {/* Online Status Dot (Fake for now) */}
                             <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></div>
                         </div>
                         <div className="flex flex-col">
@@ -124,6 +120,14 @@ export default function ChatWindow({ conversation, initialMessages, currentUserI
                 </div>
 
                 <div className="flex items-center gap-4 text-blue-500">
+                    <button
+                        onClick={handleAiTrigger}
+                        disabled={isAiLoading}
+                        className={`p-2 rounded-full transition-all ${isAiLoading ? 'bg-blue-100' : 'hover:bg-blue-50'}`}
+                        title="Ask Trio"
+                    >
+                        <Sparkles size={22} className={isAiLoading ? "animate-spin text-blue-600" : ""} />
+                    </button>
                     <button className="hover:bg-blue-50 p-2 rounded-full transition-colors"><Video size={22} /></button>
                     <button className="hover:bg-blue-50 p-2 rounded-full transition-colors"><Info size={22} /></button>
                 </div>
@@ -141,7 +145,9 @@ export default function ChatWindow({ conversation, initialMessages, currentUserI
                     {messages.map((msg, index) => {
                         const isMe = msg.sender_id === currentUserId
                         const isAi = msg.is_ai_generated
-                        const showAvatar = !isMe && (index === 0 || messages[index - 1].sender_id !== msg.sender_id)
+                        // If it's AI, we treat it as "not me" for alignment purposes, even if it uses my ID for now.
+                        const alignRight = isMe && !isAi
+                        const showAvatar = !alignRight && (index === 0 || messages[index - 1].sender_id !== msg.sender_id || messages[index - 1].is_ai_generated !== isAi)
 
                         return (
                             <motion.div
@@ -149,16 +155,16 @@ export default function ChatWindow({ conversation, initialMessages, currentUserI
                                 initial={{ opacity: 0, scale: 0.95, y: 10 }}
                                 animate={{ opacity: 1, scale: 1, y: 0 }}
                                 transition={{ duration: 0.2 }}
-                                className={`flex w-full ${isMe ? 'justify-end' : 'justify-start'}`}
+                                className={`flex w-full ${alignRight ? 'justify-end' : 'justify-start'}`}
                             >
-                                <div className={`flex max-w-[75%] ${isMe ? 'flex-row-reverse' : 'flex-row'} items-end gap-2`}>
+                                <div className={`flex max-w-[75%] ${alignRight ? 'flex-row-reverse' : 'flex-row'} items-end gap-2`}>
 
-                                    {/* Avatar for partner (only show if first in group) */}
-                                    {!isMe && (
+                                    {/* Avatar for partner/AI */}
+                                    {!alignRight && (
                                         <div className="w-8 h-8 shrink-0 pb-1">
                                             {showAvatar && (
-                                                <div className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center text-gray-500 overflow-hidden text-xs">
-                                                    {isAi ? <Sparkles size={14} className="text-ai" /> : (
+                                                <div className={`w-8 h-8 rounded-full flex items-center justify-center overflow-hidden text-xs ${isAi ? 'bg-amber-100 text-ai' : 'bg-gray-200 text-gray-500'}`}>
+                                                    {isAi ? <Sparkles size={14} /> : (
                                                         conversation.partner_avatar ? <img src={conversation.partner_avatar} alt="" className="w-full h-full object-cover" /> : conversation.partner_name?.[0]
                                                     )}
                                                 </div>
@@ -170,18 +176,19 @@ export default function ChatWindow({ conversation, initialMessages, currentUserI
                                         {/* Name for AI */}
                                         {isAi && (
                                             <span className="text-[10px] font-bold text-ai uppercase tracking-wider ml-3 mb-0.5 flex items-center gap-1">
-                                                <Sparkles size={10} /> Trio Suggestion
+                                                Trio Suggestion
                                             </span>
                                         )}
 
+                                        {/* BUBBLE STYLING FIX HERE */}
                                         <div
                                             className={`
                                                 px-4 py-2.5 shadow-sm text-[15px] leading-relaxed relative
-                                                ${isMe
-                                                    ? 'bg-primary text-white rounded-2xl rounded-tr-sm'
-                                                    : isAi
-                                                        ? 'bg-amber-50/80 text-gray-800 border border-amber-100/50 rounded-2xl rounded-tl-sm'
-                                                        : 'bg-white text-gray-900 border border-gray-200/50 rounded-2xl rounded-tl-sm'
+                                                ${isAi
+                                                    ? 'bg-amber-50/90 text-gray-900 border border-amber-200/80 rounded-2xl rounded-tl-sm' // AI Priority 1 (Gold)
+                                                    : isMe
+                                                        ? 'bg-primary text-white rounded-2xl rounded-tr-sm' // Me Priority 2 (Blue)
+                                                        : 'bg-white text-gray-900 border border-gray-200/50 rounded-2xl rounded-tl-sm' // Partner Priority 3 (White)
                                                 }
                                             `}
                                         >
@@ -189,7 +196,7 @@ export default function ChatWindow({ conversation, initialMessages, currentUserI
                                         </div>
 
                                         {/* Status / Time */}
-                                        {isMe && (
+                                        {alignRight && (
                                             <div className="text-[10px] text-gray-300 text-right pr-1">
                                                 Delivered
                                             </div>
@@ -228,7 +235,6 @@ export default function ChatWindow({ conversation, initialMessages, currentUserI
                                 transition-all text-gray-800 placeholder-gray-400
                             "
                         />
-                        {/* Send Button inside Input */}
                         <AnimatePresence>
                             {newMessage.trim() && (
                                 <motion.button
@@ -238,8 +244,7 @@ export default function ChatWindow({ conversation, initialMessages, currentUserI
                                     type="submit"
                                     className="absolute right-1 top-1 w-8 h-8 bg-primary rounded-full flex items-center justify-center text-white hover:bg-blue-800 transition-colors shadow-sm"
                                 >
-                                    <ArrowLeft size={16} className="rotate-90 hidden" /> {/* Hack to preload? No, use Send */}
-                                    <span className="font-bold text-xs"><ArrowLeft size={16} className="rotate-90" /></span>
+                                    <ArrowLeft size={16} className="rotate-90" />
                                 </motion.button>
                             )}
                         </AnimatePresence>
