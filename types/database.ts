@@ -32,6 +32,11 @@ export interface Profile {
   email: string;
   full_name: string;
   avatar_url: string;
+  bio?: string | null;
+  age?: number | null;
+  gender?: string | null;
+  interests?: string[] | null;
+  looking_for?: string | null;
 }
 
 // Derived type for UI usage
