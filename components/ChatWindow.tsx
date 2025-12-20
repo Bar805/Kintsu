@@ -31,6 +31,12 @@ export default function ChatWindow({ conversation, initialMessages, currentUserI
         endRef.current?.scrollIntoView({ behavior: 'smooth' })
     }, [messages])
 
+    // Fix for Ghost Messages: Reset state when conversation changes
+    useEffect(() => {
+        setMessages(initialMessages)
+        setNewMessage('')
+    }, [conversation.id, initialMessages])
+
     useEffect(() => {
         const channel = supabase
             .channel(`chat:${conversation.id}`)
@@ -143,10 +149,14 @@ export default function ChatWindow({ conversation, initialMessages, currentUserI
 
                 <AnimatePresence initial={false}>
                     {messages.map((msg, index) => {
+                        const trioId = process.env.NEXT_PUBLIC_TRIO_USER_ID
+                        const isTrio = msg.sender_id === trioId
                         const isMe = msg.sender_id === currentUserId
                         const isAi = msg.is_ai_generated
-                        // If it's AI, we treat it as "not me" for alignment purposes, even if it uses my ID for now.
-                        const alignRight = isMe && !isAi
+
+                        // Alignment: AI (old) or Trio are Left. Me is Right.
+                        const alignRight = isMe && !isAi && !isTrio
+
                         const showAvatar = !alignRight && (index === 0 || messages[index - 1].sender_id !== msg.sender_id || messages[index - 1].is_ai_generated !== isAi)
 
                         return (
@@ -163,8 +173,16 @@ export default function ChatWindow({ conversation, initialMessages, currentUserI
                                     {!alignRight && (
                                         <div className="w-8 h-8 shrink-0 pb-1">
                                             {showAvatar && (
-                                                <div className={`w-8 h-8 rounded-full flex items-center justify-center overflow-hidden text-xs ${isAi ? 'bg-amber-100 text-ai' : 'bg-gray-200 text-gray-500'}`}>
-                                                    {isAi ? <Sparkles size={14} /> : (
+                                                <div className={`
+                                                    w-8 h-8 rounded-full flex items-center justify-center overflow-hidden text-xs shadow-sm
+                                                    ${isTrio
+                                                        ? 'bg-yellow-100 text-yellow-600'
+                                                        : isAi
+                                                            ? 'bg-amber-100 text-ai'
+                                                            : 'bg-gray-200 text-gray-500'
+                                                    }
+                                                `}>
+                                                    {isTrio || isAi ? <Sparkles size={14} /> : (
                                                         conversation.partner_avatar ? <img src={conversation.partner_avatar} alt="" className="w-full h-full object-cover" /> : conversation.partner_name?.[0]
                                                     )}
                                                 </div>
@@ -174,21 +192,25 @@ export default function ChatWindow({ conversation, initialMessages, currentUserI
 
                                     <div className="flex flex-col gap-1">
                                         {/* Name for AI */}
-                                        {isAi && (
-                                            <span className="text-[10px] font-bold text-ai uppercase tracking-wider ml-3 mb-0.5 flex items-center gap-1">
-                                                Trio Suggestion
+                                        {(isAi || isTrio) && (
+                                            <span className={`
+                                                text-[10px] font-bold uppercase tracking-wider ml-3 mb-0.5 flex items-center gap-1
+                                                ${isTrio ? 'text-yellow-600' : 'text-ai'}
+                                            `}>
+                                                {isTrio ? 'Trio' : 'Trio Suggestion'}
                                             </span>
                                         )}
 
-                                        {/* BUBBLE STYLING FIX HERE */}
                                         <div
                                             className={`
                                                 px-4 py-2.5 shadow-sm text-[15px] leading-relaxed relative
-                                                ${isAi
-                                                    ? 'bg-amber-50/90 text-gray-900 border border-amber-200/80 rounded-2xl rounded-tl-sm' // AI Priority 1 (Gold)
-                                                    : isMe
-                                                        ? 'bg-primary text-white rounded-2xl rounded-tr-sm' // Me Priority 2 (Blue)
-                                                        : 'bg-white text-gray-900 border border-gray-200/50 rounded-2xl rounded-tl-sm' // Partner Priority 3 (White)
+                                                ${isTrio
+                                                    ? 'bg-yellow-50 text-gray-800 border border-yellow-200 shadow-sm rounded-2xl rounded-tl-sm'
+                                                    : isAi
+                                                        ? 'bg-amber-50/90 text-gray-900 border border-amber-200/80 rounded-2xl rounded-tl-sm'
+                                                        : isMe
+                                                            ? 'bg-primary text-white rounded-2xl rounded-tr-sm'
+                                                            : 'bg-white text-gray-900 border border-gray-200/50 rounded-2xl rounded-tl-sm'
                                                 }
                                             `}
                                         >

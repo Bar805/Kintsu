@@ -2,6 +2,7 @@ import { createClient } from '@/utils/supabase/server'
 import { Message } from '@/types/database'
 import { getConversations, getMessages } from '@/app/actions/chat'
 import ChatWindow from '@/components/ChatWindow'
+import MatchmakerTrigger from '@/components/MatchmakerTrigger'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 
@@ -43,10 +44,8 @@ export default async function DashboardPage(props: Props) {
                     <h1 className="text-2xl font-bold text-primary tracking-tight">Trio</h1>
 
                     <div className="flex items-center gap-2">
-                        {/* Existing Star Icon */}
-                        <div className="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center text-ai">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /></svg>
-                        </div>
+                        {/* Matchmaker Trigger */}
+                        <MatchmakerTrigger />
 
                         {/* NEW Profile Link */}
                         <Link href="/dashboard/profile" className="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center text-gray-600 hover:bg-gray-200 transition-colors">
