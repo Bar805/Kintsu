@@ -19,7 +19,7 @@ type Message = {
 
 export default function MatchmakerModal({ isOpen, onClose }: MatchmakerModalProps) {
     const [input, setInput] = useState('')
-    // FIX 1: Initialize with a static greeting so the AI doesn't jump the gun
+    // Initialize with a static greeting so the AI doesn't jump the gun
     const [messages, setMessages] = useState<Message[]>([
         { role: 'model', content: "Hey! I'm Trio. Tell me a bit about what you're looking for, and I'll see who I know." }
     ])
@@ -34,8 +34,6 @@ export default function MatchmakerModal({ isOpen, onClose }: MatchmakerModalProp
             scrollRef.current.scrollTop = scrollRef.current.scrollHeight
         }
     }, [messages, loading])
-
-    // (Deleted the old useEffect that called askMatchmaker([]) on load)
 
     const handleSend = async () => {
         if (!input.trim() || loading) return

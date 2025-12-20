@@ -3,7 +3,7 @@
 import { createClient } from '@/utils/supabase/server'
 // NEW: Import the raw client generator for Admin usage
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
-import { ConversationWithDetails, Message } from '@/types/database'
+import { ConversationWithDetails, Message, Participant } from '@/types/database'
 
 export async function getConversations(): Promise<ConversationWithDetails[]> {
     const supabase = await createClient()
@@ -48,7 +48,7 @@ export async function getConversations(): Promise<ConversationWithDetails[]> {
     const conversationsWithDetails: ConversationWithDetails[] = []
 
     for (const conv of conversations) {
-        const partner = conv.participants.find((p: any) => p.user_id !== user.id)
+        const partner = conv.participants.find((p: Participant) => p.user_id !== user.id)
 
         let partnerName = 'Unknown'
         let partnerAvatar = ''
