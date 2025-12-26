@@ -1,8 +1,9 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useState, useTransition, useRef } from 'react'
 import { Profile } from '@/types/database'
-import { updateProfile } from '@/app/actions/profile'
+import { updateProfile, updateAvatar } from '@/app/actions/profile'
+import { createClient } from '@/utils/supabase/client'
 import { User, Loader2, Save, X, ChevronLeft, Sparkles, Camera } from 'lucide-react'
 import { toast } from 'sonner'
 import Link from 'next/link'
@@ -14,6 +15,8 @@ interface ProfileFormProps {
 
 export default function ProfilePage({ profile }: ProfileFormProps) {
     const [isPending, startTransition] = useTransition()
+    const [isUploading, setIsUploading] = useState(false)
+    const fileInputRef = useRef<HTMLInputElement>(null)
 
     // Form State
     const [interests, setInterests] = useState<string[]>(profile.interests || ['Tech', 'Movies'])
@@ -33,6 +36,49 @@ export default function ProfilePage({ profile }: ProfileFormProps) {
 
     const removeInterest = (tag: string) => {
         setInterests(interests.filter(i => i !== tag))
+    }
+
+    const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0]
+        if (!file) return
+
+        if (file.size > 5 * 1024 * 1024) {
+            toast.error('File too large. Max size is 5MB.')
+            return
+        }
+
+        setIsUploading(true)
+        try {
+            const supabase = createClient()
+            const fileExt = file.name.split('.').pop()
+            const fileName = `${profile.id}/${Date.now()}.${fileExt}`
+
+            const { error: uploadError } = await supabase.storage
+                .from('avatars')
+                .upload(fileName, file)
+
+            if (uploadError) throw uploadError
+
+            const { data: { publicUrl } } = supabase.storage
+                .from('avatars')
+                .getPublicUrl(fileName)
+
+            const result = await updateAvatar(publicUrl)
+
+            if (result.success) {
+                toast.success('Profile photo updated!')
+                // Force reload to show new avatar since it's a server component prop
+                window.location.reload()
+            } else {
+                toast.error(result.error || 'Failed to save avatar link.')
+            }
+
+        } catch (error: any) {
+            console.error(error)
+            toast.error('Upload failed. Please try again.')
+        } finally {
+            setIsUploading(false)
+        }
     }
 
     const handleSubmit = async (formData: FormData) => {
@@ -67,10 +113,12 @@ export default function ProfilePage({ profile }: ProfileFormProps) {
                 <form action={handleSubmit} className="space-y-8">
                     {/* Hero Section */}
                     <div className="flex flex-col items-center text-center space-y-4">
-                        <div className="relative group cursor-pointer">
+                        <div className="relative group cursor-pointer" onClick={() => fileInputRef.current?.click()}>
                             <div className="p-1 rounded-full bg-gradient-to-br from-amber-300 via-orange-400 to-amber-500 shadow-lg shadow-orange-200/50">
                                 <div className="w-32 h-32 bg-white rounded-full flex items-center justify-center overflow-hidden border-4 border-white relative">
-                                    {profile.avatar_url ? (
+                                    {isUploading ? (
+                                        <Loader2 size={32} className="animate-spin text-amber-500" />
+                                    ) : profile.avatar_url ? (
                                         <img src={profile.avatar_url} alt="Profile" className="w-full h-full object-cover" />
                                     ) : (
                                         <User size={48} className="text-gray-300" />
@@ -80,6 +128,13 @@ export default function ProfilePage({ profile }: ProfileFormProps) {
                             <div className="absolute bottom-1 right-1 bg-white p-2 rounded-full shadow-md text-gray-500 group-hover:text-primary transition-colors border border-gray-100">
                                 <Camera size={16} />
                             </div>
+                            <input
+                                type="file"
+                                ref={fileInputRef}
+                                className="hidden"
+                                accept="image/*"
+                                onChange={handleImageUpload}
+                            />
                         </div>
                         <div>
                             <h1 className="text-2xl font-bold text-gray-900">{profile.full_name}</h1>

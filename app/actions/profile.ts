@@ -77,3 +77,25 @@ export async function updateProfile(formData: FormData): Promise<{ success: bool
     revalidatePath('/dashboard/profile')
     return { success: true }
 }
+
+export async function updateAvatar(avatarUrl: string): Promise<{ success: boolean; error?: string }> {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+
+    if (!user) {
+        return { success: false, error: 'Not authenticated' }
+    }
+
+    const { error } = await supabase
+        .from('profiles')
+        .update({ avatar_url: avatarUrl })
+        .eq('id', user.id)
+
+    if (error) {
+        console.error('Error updating avatar:', error)
+        return { success: false, error: 'Failed to update avatar' }
+    }
+
+    revalidatePath('/dashboard/profile')
+    return { success: true }
+}
