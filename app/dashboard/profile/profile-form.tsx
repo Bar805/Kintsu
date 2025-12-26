@@ -3,8 +3,9 @@
 import { useState, useTransition } from 'react'
 import { Profile } from '@/types/database'
 import { updateProfile } from '@/app/actions/profile'
-import { User, Loader2, Save, X } from 'lucide-react'
+import { User, Loader2, Save, X, ChevronLeft } from 'lucide-react'
 import { toast } from 'sonner'
+import Link from 'next/link'
 
 interface ProfileFormProps {
     profile: Profile
@@ -50,7 +51,15 @@ export default function ProfilePage({ profile }: ProfileFormProps) {
     return (
         <div className="h-screen w-full overflow-y-auto bg-gray-50">
             <div className="max-w-3xl mx-auto p-6 space-y-8 pb-24">
-                <header className="mb-8">
+                {/* Navigation */}
+                <div className="flex items-center">
+                    <Link href="/dashboard" className="inline-flex items-center gap-2 text-gray-500 hover:text-gray-900 transition-colors py-2 -ml-2 rounded-lg px-2 hover:bg-gray-100">
+                        <ChevronLeft size={20} />
+                        <span className="font-medium">Back to Dashboard</span>
+                    </Link>
+                </div>
+
+                <header className="mb-0">
                     <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Your Profile</h1>
                     <p className="text-gray-500 mt-2">Manage your personal information and how others see you on Trio.</p>
                 </header>
