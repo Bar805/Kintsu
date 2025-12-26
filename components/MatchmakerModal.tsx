@@ -6,6 +6,7 @@ import { X, Send, Sparkles, Loader2, ArrowRight } from 'lucide-react'
 import { askMatchmaker, MatchmakerResponse } from '@/app/actions/matchmaker'
 import { createMatchConversation } from '@/app/actions/chat'
 import { useRouter } from 'next/navigation'
+import { toast } from 'sonner'
 
 interface MatchmakerModalProps {
     isOpen: boolean
@@ -78,13 +79,16 @@ export default function MatchmakerModal({ isOpen, onClose }: MatchmakerModalProp
         try {
             const conversationId = await createMatchConversation(matchData.matchId, matchData.introMessage)
             if (conversationId) {
+                toast.success('Match created! Redirecting...')
                 router.push(`/dashboard?conversationId=${conversationId}`)
                 onClose()
             } else {
                 console.error("Failed to create conversation (returned null)")
+                toast.error('Could not create match.')
             }
         } catch (e) {
             console.error('Failed to create match', e)
+            toast.error('An unexpected error occurred.')
         } finally {
             setLoading(false)
         }

@@ -5,9 +5,10 @@ import { createBrowserClient } from '@supabase/ssr'
 import { Message, ConversationWithDetails } from '@/types/database'
 import { sendMessage } from '@/app/actions/chat'
 import { generateTrioResponse } from '@/app/actions/ai'
-import { ArrowLeft, Sparkles, User, Info, Phone, Video } from 'lucide-react'
+import { ChevronLeft, Sparkles, User, Info, Phone, Video, ArrowLeft } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import Link from 'next/link'
+import { toast } from 'sonner'
 
 interface ChatWindowProps {
     conversation: ConversationWithDetails
@@ -90,6 +91,7 @@ export default function ChatWindow({ conversation, initialMessages, currentUserI
             await sendMessage(conversation.id, content, tempId)
         } catch (err) {
             console.error('Failed to send:', err)
+            toast.error('Failed to send message. Please try again.')
             setMessages(prev => prev.filter(m => m.id !== tempId))
             setNewMessage(content)
         } finally {
@@ -100,10 +102,13 @@ export default function ChatWindow({ conversation, initialMessages, currentUserI
     const handleAiTrigger = async () => {
         if (isAiLoading) return
         setIsAiLoading(true)
+        toast.info('Trio is thinking...')
         try {
             await generateTrioResponse(conversation.id)
+            toast.success('Trio responded!')
         } catch (error) {
             console.error('AI generation failed', error)
+            toast.error('Trio failed to respond.')
         } finally {
             setIsAiLoading(false)
         }
@@ -114,8 +119,8 @@ export default function ChatWindow({ conversation, initialMessages, currentUserI
             {/* Header */}
             <div className="h-16 px-4 bg-white/80 backdrop-blur-md border-b border-gray-200 flex items-center justify-between sticky top-0 z-10">
                 <div className="flex items-center gap-3">
-                    <Link href="/dashboard" className="md:hidden p-2 -ml-2 text-gray-500 hover:bg-gray-100 rounded-full">
-                        <ArrowLeft size={22} />
+                    <Link href="/dashboard" className="md:hidden p-2 -ml-2 text-gray-500 hover:bg-gray-100 rounded-full transition-colors active:bg-gray-200">
+                        <ChevronLeft size={26} />
                     </Link>
                     <div className="flex items-center gap-3">
                         <div className="relative">
@@ -132,7 +137,7 @@ export default function ChatWindow({ conversation, initialMessages, currentUserI
                             <h2 className="text-sm font-semibold text-gray-900 leading-tight">
                                 {conversation.partner_name || 'Unknown'}
                             </h2>
-                            <span className="text-xs text-gray-400 font-medium">iMessage</span>
+                            <span className="text-xs text-gray-400 font-medium">Trio Secure Chat</span>
                         </div>
                     </div>
                 </div>
@@ -232,7 +237,7 @@ export default function ChatWindow({ conversation, initialMessages, currentUserI
                                         {/* Status / Time */}
                                         {alignRight && (
                                             <div className="text-[10px] text-gray-300 text-right pr-1">
-                                                Delivered
+                                                Sent
                                             </div>
                                         )}
                                     </div>
@@ -261,12 +266,12 @@ export default function ChatWindow({ conversation, initialMessages, currentUserI
                             type="text"
                             value={newMessage}
                             onChange={(e) => setNewMessage(e.target.value)}
-                            placeholder="iMessage"
+                            placeholder="Trio Secure Chat"
                             className="
                                 w-full h-10 bg-gray-100 border border-transparent 
                                 rounded-full pl-4 pr-10 
                                 focus:outline-none focus:bg-white focus:border-gray-300 focus:ring-2 focus:ring-primary/10 
-                                transition-all text-gray-800 placeholder-gray-400
+                                transition-all text-base text-gray-800 placeholder-gray-400
                             "
                         />
                         <AnimatePresence>

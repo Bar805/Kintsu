@@ -4,6 +4,7 @@ import { useState, useTransition } from 'react'
 import { Profile } from '@/types/database'
 import { updateProfile } from '@/app/actions/profile'
 import { User, Loader2, Save, X } from 'lucide-react'
+import { toast } from 'sonner'
 
 interface ProfileFormProps {
     profile: Profile
@@ -11,7 +12,6 @@ interface ProfileFormProps {
 
 export default function ProfilePage({ profile }: ProfileFormProps) {
     const [isPending, startTransition] = useTransition()
-    const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null)
 
     // Form State
     const [interests, setInterests] = useState<string[]>(profile.interests || ['Tech', 'Movies']) // Default mock if empty
@@ -34,16 +34,15 @@ export default function ProfilePage({ profile }: ProfileFormProps) {
     }
 
     const handleSubmit = async (formData: FormData) => {
-        setMessage(null)
         // Append JSON interests
         formData.append('interests', JSON.stringify(interests))
 
         startTransition(async () => {
             const result = await updateProfile(formData)
             if (result.success) {
-                setMessage({ type: 'success', text: 'Profile updated successfully!' })
+                toast.success('Profile updated successfully!')
             } else {
-                setMessage({ type: 'error', text: result.error || 'Something went wrong.' })
+                toast.error(result.error || 'Something went wrong.')
             }
         })
     }
@@ -169,11 +168,6 @@ export default function ProfilePage({ profile }: ProfileFormProps) {
                     {/* Actions */}
                     <div className="pt-4 flex items-center justify-between border-t border-gray-100">
                         <div className="text-sm">
-                            {message && (
-                                <span className={message.type === 'success' ? 'text-green-600 font-medium' : 'text-red-500 font-medium'}>
-                                    {message.text}
-                                </span>
-                            )}
                         </div>
 
                         <button
