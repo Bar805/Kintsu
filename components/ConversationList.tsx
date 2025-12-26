@@ -43,6 +43,7 @@ export default function ConversationList({ initialConversations, currentUserId }
 
     const handleLogout = async () => {
         await supabase.auth.signOut()
+        router.push('/')
         router.refresh()
     }
 

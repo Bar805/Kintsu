@@ -21,7 +21,7 @@ export default async function DashboardPage(props: Props) {
     const { data: { user } } = await supabase.auth.getUser()
 
     if (!user) {
-        redirect('/login')
+        redirect('/')
     }
 
     // 2. Fetch data

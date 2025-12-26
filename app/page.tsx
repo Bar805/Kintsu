@@ -1,25 +1,18 @@
-import Link from 'next/link'
+import { createClient } from '@/utils/supabase/server'
+import { redirect } from 'next/navigation'
+import AuthForm from '@/components/AuthForm'
 
-export default function Home() {
+export default async function Home() {
+    const supabase = await createClient()
+    const { data: { session } } = await supabase.auth.getSession()
+
+    if (session) {
+        redirect('/dashboard')
+    }
+
     return (
-        <main className="flex min-h-screen flex-col items-center justify-center p-24">
-            <h1 className="text-4xl font-bold mb-8">Trio</h1>
-            <p className="mb-8 text-xl">The social connection app</p>
-
-            <div className="flex gap-4">
-                <Link
-                    href="/login"
-                    className="bg-blue-500 text-white px-6 py-3 rounded-lg hover:bg-blue-600 transition"
-                >
-                    Login
-                </Link>
-                <Link
-                    href="/dashboard"
-                    className="bg-gray-800 text-white px-6 py-3 rounded-lg hover:bg-gray-700 transition"
-                >
-                    Go to Dashboard
-                </Link>
-            </div>
+        <main className="flex min-h-screen flex-col items-center justify-center p-4 bg-gray-50">
+            <AuthForm />
         </main>
     )
 }
