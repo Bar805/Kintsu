@@ -39,15 +39,27 @@ export default function ChatWindow({ conversation, initialMessages, currentUserI
 
     useEffect(() => {
         const channel = supabase
-            .channel(`chat:${conversation.id}`)
-            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `conversation_id=eq.${conversation.id}` }, (payload) => {
-                const newMsg = payload.new as Message
-                setMessages((current) => {
-                    if (current.find(m => m.id === newMsg.id)) return current
-                    return [...current, newMsg]
-                })
+            .channel(`chat:${conversation.id}:${currentUserId}`)
+            .on(
+                'postgres_changes',
+                {
+                    event: 'INSERT',
+                    schema: 'public',
+                    table: 'messages',
+                    filter: `conversation_id=eq.${conversation.id}`
+                },
+                (payload) => {
+                    const newMsg = payload.new as Message
+                    setMessages((current) => {
+                        if (current.find(m => m.id === newMsg.id)) return current
+                        return [...current, newMsg]
+                    })
+                }
+            )
+            .subscribe((status) => {
+                if (status === 'SUBSCRIBED') console.log('✅ Chat connected!')
+                if (status === 'CHANNEL_ERROR') console.error('❌ Chat connection failed')
             })
-            .subscribe()
 
         return () => {
             supabase.removeChannel(channel)

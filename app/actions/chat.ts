@@ -119,12 +119,11 @@ export async function sendMessage(conversationId: string, content: string, id?: 
     return true
 }
 
-export async function createMatchConversation(matchId: string, introMessage: string): Promise<string | null> {
+export async function createMatchConversation(matchId: string, introMessage?: string): Promise<string | null> {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
 
     if (!user) return null
-    if (!introMessage || introMessage.trim().length === 0) return null
 
     // 1. Get the Trio ID from environment
     const trioId = process.env.NEXT_PUBLIC_TRIO_USER_ID
@@ -160,18 +159,20 @@ export async function createMatchConversation(matchId: string, introMessage: str
 
     if (partError) return null
 
-    // 4. Add Intro Message (Sent by TRIO)
-    const { error: msgError } = await adminSupabase
-        .from('messages')
-        .insert({
-            conversation_id: conversation.id,
-            sender_id: trioId, // <--- THE TRUTH
-            content: introMessage,
-            is_ai_generated: true
-        })
-        .select()
+    // 4. Add Intro Message (Sent by TRIO) - ONLY IF EXISTS
+    if (introMessage && introMessage.trim().length > 0) {
+        const { error: msgError } = await adminSupabase
+            .from('messages')
+            .insert({
+                conversation_id: conversation.id,
+                sender_id: trioId, // <--- THE TRUTH
+                content: introMessage,
+                is_ai_generated: true
+            })
+            .select()
 
-    if (msgError) console.error('Error sending intro message:', msgError)
+        if (msgError) console.error('Error sending intro message:', msgError)
+    }
 
     return conversation.id
 }
