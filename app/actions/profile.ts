@@ -1,7 +1,7 @@
 'use server'
 
 import { createClient } from '@/utils/supabase/server'
-import { Profile } from '@/types/database'
+import { Profile, VibeSliders, PromptAnswer } from '@/types/database'
 import { revalidatePath } from 'next/cache'
 
 export async function getProfile(userId: string): Promise<Profile | null> {
@@ -21,7 +21,15 @@ export async function getProfile(userId: string): Promise<Profile | null> {
     return data
 }
 
-export async function updateProfile(formData: FormData): Promise<{ success: boolean; error?: string }> {
+export async function updateProfile(payload: {
+    fullName: string
+    age: number
+    gender: string
+    sliders: VibeSliders
+    identityChips: string[]
+    promptAnswer: PromptAnswer | null
+    aiSummary: string
+}): Promise<{ success: boolean; error?: string }> {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
 
@@ -29,39 +37,27 @@ export async function updateProfile(formData: FormData): Promise<{ success: bool
         return { success: false, error: 'Not authenticated' }
     }
 
-    const fullName = formData.get('fullName') as string
-    const ageRaw = formData.get('age') as string
-    const gender = formData.get('gender') as string
-    const bio = formData.get('bio') as string
-    const lookingFor = formData.get('lookingFor') as string
-    const interestsJson = formData.get('interests') as string
-
     // Validation
-    const age = parseInt(ageRaw)
-    if (isNaN(age) || age < 18) {
-        // Just a simple check, maybe they allow <18 but usually social apps don't or strict on it
-        // User asked to "Validate inputs (e.g., age must be realistic)"
-        // Let's say realistic is 13+ or 18+, I'll go with 13 for generic, or just > 0. 
-        // Let's stick to a sane default like 13.
-        if (age < 13 || age > 120) {
-            return { success: false, error: 'Please enter a valid age.' }
-        }
+    if (!payload.fullName.trim()) {
+        return { success: false, error: 'Name is required.' }
     }
 
-    let interests: string[] = []
-    try {
-        interests = JSON.parse(interestsJson || '[]')
-    } catch (e) {
-        return { success: false, error: 'Invalid interests format' }
+    if (payload.age < 13 || payload.age > 120 || isNaN(payload.age)) {
+        return { success: false, error: 'Please enter a valid age.' }
     }
 
-    const updates: Partial<Profile> = {
-        full_name: fullName,
-        age: age,
-        gender: gender,
-        bio: bio,
-        looking_for: lookingFor,
-        interests: interests,
+    if (payload.identityChips.length > 5) {
+        return { success: false, error: 'Maximum 5 identity chips allowed.' }
+    }
+
+    const updates = {
+        full_name: payload.fullName.trim(),
+        age: payload.age,
+        gender: payload.gender,
+        sliders: payload.sliders,
+        identity_chips: payload.identityChips,
+        prompt_answer: payload.promptAnswer,
+        ai_summary: payload.aiSummary,
     }
 
     const { error } = await supabase
@@ -98,4 +94,62 @@ export async function updateAvatar(avatarUrl: string): Promise<{ success: boolea
 
     revalidatePath('/dashboard/profile')
     return { success: true }
+}
+
+// ============================================================
+// AI Bio Generation
+// ============================================================
+export async function generateIdentitySummary(
+    sliders: VibeSliders,
+    chips: string[],
+    promptAnswer: PromptAnswer
+): Promise<{ summary: string | null; error?: string }> {
+    try {
+        const apiKey = process.env.GOOGLE_API_KEY
+        if (!apiKey) {
+            return { summary: null, error: 'API key not configured' }
+        }
+
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`
+
+        const prompt = `
+You are writing a short, punchy, third-person bio for a social app profile.
+It should feel like a witty "About Me" blurb — 2-3 sentences max. Be fun, warm, and specific.
+
+DATA ABOUT THIS PERSON:
+- Social Battery: ${sliders.social_battery}/100 (0=total introvert, 100=life of the party)
+- Planning Style: ${sliders.planning}/100 (0=spontaneous, 100=itinerary for everything)
+- Conversation: ${sliders.conversation}/100 (0=listener, 100=storyteller)
+- Thinking: ${sliders.thinking}/100 (0=gut feeling, 100=pure logic)
+- Risk Tolerance: ${sliders.risk}/100 (0=comfort zone, 100=send it)
+
+- They identify as: ${chips.join(', ')}
+
+- When asked "${promptAnswer.prompt}", they said:
+  "${promptAnswer.answer}"
+
+Write ONE engaging bio (no quotes, no labels, no bullet points). Just the bio text.
+`
+
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                contents: [{ parts: [{ text: prompt }] }],
+            }),
+        })
+
+        if (!response.ok) {
+            console.error('Gemini API error:', response.status)
+            return { summary: null, error: 'AI generation failed' }
+        }
+
+        const data = await response.json()
+        const text = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || null
+
+        return { summary: text }
+    } catch (error) {
+        console.error('AI generation error:', error)
+        return { summary: null, error: 'Failed to generate bio' }
+    }
 }

@@ -4,6 +4,7 @@ import { createClient } from '@/utils/supabase/server'
 // NEW: Import the raw client generator for Admin usage
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { ConversationWithDetails, Message, Participant } from '@/types/database'
+import { evaluateConversationState, generateTrioResponse, UserProfile } from './ai'
 
 export async function getConversations(): Promise<ConversationWithDetails[]> {
     const supabase = await createClient()
@@ -114,6 +115,39 @@ export async function sendMessage(conversationId: string, content: string, id?: 
     if (error) {
         console.error('Error sending message:', error)
         return false
+    }
+
+    // --- TRIGGER AI EVALUATION ---
+    try {
+        // 1. Fetch Participants
+        const { data: participants } = await supabase
+            .from('participants')
+            .select('user_id')
+            .eq('conversation_id', conversationId)
+
+        if (participants) {
+            const userIds = participants.map(p => p.user_id)
+            const { data: profiles } = await supabase
+                .from('profiles')
+                .select('id, full_name, interests, bio')
+                .in('id', userIds)
+
+            if (profiles) {
+                // We don't await this so the user doesn't wait for the AI to think
+                // However, in Server Actions you usually should await or use a queue.
+                // For this demo, we'll await it but it might add delay. 
+                // To be faster, we could use `void` but Vercel might kill the process.
+                // Let's await for reliability in this prototype.
+                // AWAIT execution to ensure it finishes before Vercel kills the lambda
+                const shouldSpeak = await evaluateConversationState(conversationId, profiles)
+                if (shouldSpeak) {
+                    await generateTrioResponse(conversationId, profiles)
+                }
+            }
+        }
+
+    } catch (e) {
+        console.error("AI trigger error:", e)
     }
 
     return true

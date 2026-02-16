@@ -27,6 +27,19 @@ export interface Participant {
   joined_at: string;
 }
 
+export interface VibeSliders {
+  social_battery: number;
+  planning: number;
+  conversation: number;
+  thinking: number;
+  risk: number;
+}
+
+export interface PromptAnswer {
+  prompt: string;
+  answer: string;
+}
+
 export interface Profile {
   id: string;
   email: string;
@@ -37,6 +50,11 @@ export interface Profile {
   gender?: string | null;
   interests?: string[] | null;
   looking_for?: string | null;
+  // Identity Stack fields
+  sliders?: VibeSliders | null;
+  identity_chips?: string[] | null;
+  prompt_answer?: PromptAnswer | null;
+  ai_summary?: string | null;
 }
 
 // Derived type for UI usage

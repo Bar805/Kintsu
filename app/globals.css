@@ -33,3 +33,39 @@ body {
     -ms-overflow-style: none;
     scrollbar-width: none;
 }
+
+/* Vibe Slider — cross-browser custom range input */
+.vibe-slider {
+    -webkit-appearance: none;
+    appearance: none;
+    background: transparent;
+    cursor: pointer;
+}
+
+.vibe-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: transparent;
+    cursor: pointer;
+}
+
+.vibe-slider::-moz-range-thumb {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+}
+
+.vibe-slider::-webkit-slider-runnable-track {
+    height: 12px;
+    background: transparent;
+}
+
+.vibe-slider::-moz-range-track {
+    height: 12px;
+    background: transparent;
+}
