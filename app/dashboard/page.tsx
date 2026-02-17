@@ -4,6 +4,7 @@ import { getConversations, getMessages } from '@/app/actions/chat'
 import ChatWindow from '@/components/ChatWindow'
 import ConversationList from '@/components/ConversationList'
 import MatchmakerTrigger from '@/components/MatchmakerTrigger'
+import MatchNotification from '@/components/MatchNotification'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { Home, User, Settings, Bell, Plus, Sparkles } from 'lucide-react'
@@ -61,6 +62,9 @@ export default async function DashboardPage(props: Props) {
 
             {/* Main Scrollable Content */}
             <div className="flex-1 overflow-y-auto px-6 no-scrollbar">
+                {/* Match Notification (for matched users) */}
+                <MatchNotification />
+
                 {/* Request Connection Card */}
                 <div className="mb-8">
                     <MatchmakerTrigger />

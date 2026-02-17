@@ -2,15 +2,15 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Send, Sparkles, Loader2, ArrowRight } from 'lucide-react'
-import { askMatchmaker, MatchmakerResponse } from '@/app/actions/matchmaker'
-import { createMatchConversation } from '@/app/actions/chat'
-import { useRouter } from 'next/navigation'
+import { X, Send, Sparkles, Loader2 } from 'lucide-react'
+import { chatWithMatchmaker } from '@/app/actions/matchmaker'
 import { toast } from 'sonner'
 
 interface MatchmakerModalProps {
     isOpen: boolean
     onClose: () => void
+    existingRequestId?: string | null
+    onSearchStarted?: () => void
 }
 
 type Message = {
@@ -18,15 +18,15 @@ type Message = {
     content: string
 }
 
-export default function MatchmakerModal({ isOpen, onClose }: MatchmakerModalProps) {
+export default function MatchmakerModal({ isOpen, onClose, existingRequestId, onSearchStarted }: MatchmakerModalProps) {
     const [messages, setMessages] = useState<Message[]>([
-        { role: 'model', content: "Hey! I'm Kintsu — tell me who you want to meet. What kind of connection are you looking for?" }
+        { role: 'model', content: "Hey! Ready for a new connection?\n\nTell me, who are you looking to meet?" }
     ])
     const [input, setInput] = useState('')
     const [loading, setLoading] = useState(false)
-    const [matchData, setMatchData] = useState<MatchmakerResponse | null>(null)
+    const [requestId, setRequestId] = useState<string | null>(existingRequestId || null)
+    const [searchStarted, setSearchStarted] = useState(false)
     const scrollRef = useRef<HTMLDivElement>(null)
-    const router = useRouter()
 
     useEffect(() => {
         if (scrollRef.current) {
@@ -34,21 +34,36 @@ export default function MatchmakerModal({ isOpen, onClose }: MatchmakerModalProp
         }
     }, [messages, loading])
 
+    // Reset when modal opens
+    useEffect(() => {
+        if (isOpen && !existingRequestId) {
+            setMessages([
+                { role: 'model', content: "Hey! Ready for a new connection?\n\nTell me, who are you looking to meet?" }
+            ])
+            setRequestId(null)
+            setSearchStarted(false)
+        }
+    }, [isOpen, existingRequestId])
+
     const handleSend = async () => {
-        if (!input.trim() || loading) return
+        if (!input.trim() || loading || searchStarted) return
         const userMsg = input.trim()
         setInput('')
         setMessages(prev => [...prev, { role: 'user', content: userMsg }])
         setLoading(true)
 
         try {
-            const history = [...messages.map(m => ({ role: m.role, content: m.content })), { role: 'user' as const, content: userMsg }]
-            const result = await askMatchmaker(history)
-
+            const result = await chatWithMatchmaker(userMsg, requestId || undefined)
+            setRequestId(result.requestId)
             setMessages(prev => [...prev, { role: 'model', content: result.reply }])
 
-            if (result.matchFound) {
-                setMatchData(result)
+            if (result.readyToSearch) {
+                setSearchStarted(true)
+                // Auto-close after a brief moment
+                setTimeout(() => {
+                    onSearchStarted?.()
+                    onClose()
+                }, 2500)
             }
         } catch (error) {
             console.error('Matchmaker error:', error)
@@ -62,23 +77,6 @@ export default function MatchmakerModal({ isOpen, onClose }: MatchmakerModalProp
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault()
             handleSend()
-        }
-    }
-
-    const handleRevealMatch = async () => {
-        if (!matchData?.matchId) return
-        setLoading(true)
-        try {
-            const convoId = await createMatchConversation(matchData.matchId!)
-            toast.success(`You're now connected! 🎉`, { duration: 3000 })
-            onClose()
-            router.push(`/dashboard?conversationId=${convoId}`)
-            router.refresh()
-        } catch (error: any) {
-            console.error('Failed to create conversation:', error)
-            toast.error(error.message || 'Failed to start conversation')
-        } finally {
-            setLoading(false)
         }
     }
 
@@ -101,12 +99,14 @@ export default function MatchmakerModal({ isOpen, onClose }: MatchmakerModalProp
                     {/* Header */}
                     <div className="h-16 bg-cream border-b border-sand flex items-center justify-between px-6 shrink-0">
                         <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 rounded-full bg-mustard flex items-center justify-center text-charcoal">
-                                <Sparkles size={18} />
+                            <div className="w-8 h-8 rounded-full bg-mustard border border-charcoal flex items-center justify-center text-charcoal">
+                                <Sparkles size={16} />
                             </div>
                             <div>
-                                <h2 className="font-bold text-charcoal">Kintsu Matchmaker</h2>
-                                <p className="text-xs text-gray-400 font-medium">Finding your perfect fit</p>
+                                <h2 className="font-bold text-charcoal text-sm">Kintsu Host</h2>
+                                <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">
+                                    {searchStarted ? 'Searching...' : 'New Search'}
+                                </p>
                             </div>
                         </div>
                         <button onClick={onClose} className="p-2 hover:bg-sand rounded-full transition-colors text-gray-400 hover:text-charcoal">
@@ -115,64 +115,74 @@ export default function MatchmakerModal({ isOpen, onClose }: MatchmakerModalProp
                     </div>
 
                     {/* Chat Area */}
-                    <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-cream" ref={scrollRef}>
-                        {messages.map((msg, idx) => (
-                            <div
-                                key={idx}
-                                className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                            >
-                                <div className={`
-                                    max-w-[80%] px-5 py-3 text-sm leading-relaxed shadow-sm font-medium
-                                    ${msg.role === 'user'
-                                        ? 'bg-rust text-white rounded-t-2xl rounded-bl-2xl'
-                                        : 'bg-white text-charcoal border border-sand rounded-t-2xl rounded-br-2xl'
-                                    }
-                                `}>
-                                    {msg.content}
-                                </div>
-                            </div>
-                        ))}
+                    <div className="flex-1 overflow-y-auto px-4 py-6" ref={scrollRef}>
+                        <div className="space-y-6">
+                            {messages.map((msg, idx) => {
+                                const isAi = msg.role === 'model'
+                                if (isAi) {
+                                    return (
+                                        <motion.div
+                                            key={idx}
+                                            initial={{ opacity: 0, y: 10 }}
+                                            animate={{ opacity: 1, y: 0 }}
+                                            className="flex flex-col w-full items-center"
+                                        >
+                                            <div className="bg-mustard/20 border border-mustard/50 p-6 rounded-3xl text-center max-w-[95%] relative">
+                                                <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-mustard text-charcoal text-[9px] font-bold uppercase tracking-widest px-2 py-1 rounded-full">
+                                                    Kintsu Host
+                                                </div>
+                                                <p className="text-charcoal text-sm font-medium leading-relaxed whitespace-pre-wrap">
+                                                    {msg.content}
+                                                </p>
+                                            </div>
+                                        </motion.div>
+                                    )
+                                }
+                                return (
+                                    <motion.div
+                                        key={idx}
+                                        initial={{ opacity: 0, scale: 0.95 }}
+                                        animate={{ opacity: 1, scale: 1 }}
+                                        className="flex flex-col items-end"
+                                    >
+                                        <div className="p-4 max-w-[85%] text-sm font-medium leading-relaxed shadow-sm bg-rust text-white rounded-t-2xl rounded-bl-2xl">
+                                            <p className="whitespace-pre-wrap">{msg.content}</p>
+                                        </div>
+                                    </motion.div>
+                                )
+                            })}
 
-                        {loading && (
-                            <div className="flex justify-start">
-                                <div className="bg-white border border-sand rounded-t-2xl rounded-br-2xl px-5 py-3 shadow-sm">
-                                    <div className="flex space-x-1 h-2 items-center justify-center">
-                                        <div className="w-1.5 h-1.5 bg-mustard rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
-                                        <div className="w-1.5 h-1.5 bg-mustard rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
-                                        <div className="w-1.5 h-1.5 bg-mustard rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
+                            {loading && (
+                                <div className="flex flex-col w-full items-start ml-1">
+                                    <div className="bg-white px-4 py-3 rounded-tr-2xl rounded-bl-2xl rounded-br-2xl shadow-sm border-l-4 border-mustard">
+                                        <div className="flex space-x-1 h-2 items-center justify-center">
+                                            <div className="w-1.5 h-1.5 bg-mustard rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
+                                            <div className="w-1.5 h-1.5 bg-mustard rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
+                                            <div className="w-1.5 h-1.5 bg-mustard rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
-                        )}
+                            )}
 
-                        {matchData?.matchFound && (
-                            <motion.div
-                                initial={{ opacity: 0, y: 20 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                className="my-8 p-6 bg-charcoal rounded-3xl text-white text-center shadow-xl mx-4"
-                            >
-                                <div className="w-16 h-16 bg-mustard rounded-full flex items-center justify-center mx-auto mb-4">
-                                    <Sparkles className="w-8 h-8 text-charcoal" />
-                                </div>
-                                <h3 className="text-2xl font-bold mb-2">It's a Match!</h3>
-                                <p className="text-white/70 mb-6 text-sm font-medium">
-                                    I've found someone who fits exactly what you're looking for.
-                                </p>
-                                <button
-                                    onClick={handleRevealMatch}
-                                    className="w-full bg-rust text-white font-bold py-3 px-6 rounded-full shadow-lg hover:bg-rust/90 transition-all flex items-center justify-center gap-2 group"
+                            {searchStarted && (
+                                <motion.div
+                                    initial={{ opacity: 0, y: 20 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    className="flex justify-center"
                                 >
-                                    <span>Meet Them Now</span>
-                                    <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-                                </button>
-                            </motion.div>
-                        )}
+                                    <div className="bg-charcoal text-white px-6 py-3 rounded-full flex items-center gap-2 shadow-lg">
+                                        <Loader2 size={16} className="animate-spin text-mustard" />
+                                        <span className="text-sm font-bold">Scanning network...</span>
+                                    </div>
+                                </motion.div>
+                            )}
+                        </div>
                     </div>
 
                     {/* Input Area */}
-                    {!matchData?.matchFound && (
+                    {!searchStarted && (
                         <div className="p-4 bg-white border-t border-sand">
-                            <div className="relative flex items-center gap-2">
+                            <div className="flex items-center gap-2">
                                 <input
                                     type="text"
                                     value={input}
