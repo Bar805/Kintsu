@@ -206,7 +206,7 @@ export async function generateMeetupSuggestion(
 
 export async function markInterested(
     conversationId: string
-): Promise<{ alreadyInterested: boolean }> {
+): Promise<{ interested: boolean }> {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) throw new Error('Unauthorized')
@@ -223,34 +223,48 @@ export async function markInterested(
     if (!conv) throw new Error('Conversation not found')
 
     const currentIds: string[] = conv.interested_user_ids || []
+    const isCurrentlyInterested = currentIds.includes(user.id)
 
-    // Already clicked
-    if (currentIds.includes(user.id)) {
-        return { alreadyInterested: true }
+    if (isCurrentlyInterested) {
+        // ── TOGGLE OFF ──
+        const newIds = currentIds.filter(id => id !== user.id)
+        const updatePayload: any = { interested_user_ids: newIds }
+
+        // If meetup hasn't been sent yet, cancel the trigger
+        if (!conv.meetup_suggested && conv.meetup_trigger_after) {
+            updatePayload.meetup_trigger_after = null
+        }
+
+        await admin
+            .from('conversations')
+            .update(updatePayload)
+            .eq('id', conversationId)
+
+        return { interested: false }
+    } else {
+        // ── TOGGLE ON ──
+        const newIds = [...currentIds, user.id]
+        const updatePayload: any = { interested_user_ids: newIds }
+
+        // If both users are now interested and no trigger yet
+        if (newIds.length >= 2 && !conv.meetup_suggested && !conv.meetup_trigger_after) {
+            const { count } = await admin
+                .from('messages')
+                .select('id', { count: 'exact', head: true })
+                .eq('conversation_id', conversationId)
+
+            // Random 2-8 message delay
+            const delay = Math.floor(Math.random() * 7) + 2
+            updatePayload.meetup_trigger_after = (count || 0) + delay
+        }
+
+        await admin
+            .from('conversations')
+            .update(updatePayload)
+            .eq('id', conversationId)
+
+        return { interested: true }
     }
-
-    const newIds = [...currentIds, user.id]
-    const updatePayload: any = { interested_user_ids: newIds }
-
-    // If both users are now interested and we haven't set up a trigger yet
-    if (newIds.length >= 2 && !conv.meetup_suggested && !conv.meetup_trigger_after) {
-        // Count current messages
-        const { count } = await admin
-            .from('messages')
-            .select('id', { count: 'exact', head: true })
-            .eq('conversation_id', conversationId)
-
-        // Set trigger to fire after 2-8 more messages from now
-        const delay = Math.floor(Math.random() * 7) + 2 // 2-8
-        updatePayload.meetup_trigger_after = (count || 0) + delay
-    }
-
-    await admin
-        .from('conversations')
-        .update(updatePayload)
-        .eq('id', conversationId)
-
-    return { alreadyInterested: false }
 }
 
 // ─── 4. Get Conversation Meta ───────────────────────────────────────────────

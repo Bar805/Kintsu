@@ -219,13 +219,15 @@ export default function ChatWindow({ conversation, initialMessages, currentUserI
     // ─── Handle interested click ─────────────────────────────────────────────
 
     const handleInterestClick = async () => {
-        if (interested || interestLoading) return
+        if (interestLoading) return
         setInterestLoading(true)
         try {
             const result = await markInterested(conversation.id)
-            if (!result.alreadyInterested) {
-                setInterested(true)
+            setInterested(result.interested)
+            if (result.interested) {
                 toast.success('Noted! ☕', { description: "We'll keep that between us." })
+            } else {
+                toast('Changed your mind? No worries.', { description: 'Interest removed.' })
             }
         } catch {
             toast.error('Something went wrong')
@@ -376,14 +378,14 @@ export default function ChatWindow({ conversation, initialMessages, currentUserI
                 <div className="absolute left-0 right-0 -top-16 flex justify-center pointer-events-none">
                     <button
                         onClick={handleInterestClick}
-                        disabled={interested || interestLoading}
+                        disabled={interestLoading}
                         className={`pointer-events-auto flex items-center gap-3 px-8 py-3 rounded-full font-bold uppercase text-xs tracking-widest transition-all shadow-lg ${interested
-                            ? 'bg-teal text-white ring-2 ring-offset-2 ring-teal'
+                            ? 'bg-teal text-white ring-2 ring-offset-2 ring-teal hover:bg-teal/80'
                             : 'bg-white text-charcoal hover:bg-rust hover:text-white border border-sand'
                             } disabled:opacity-70`}
                     >
                         <Coffee className="w-4 h-4" />
-                        {interestLoading ? '...' : interested ? 'Interested' : 'Interested?'}
+                        {interestLoading ? '...' : interested ? 'Interested ✓' : 'Interested?'}
                     </button>
                 </div>
 
