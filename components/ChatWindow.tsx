@@ -1,11 +1,11 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { createBrowserClient } from '@supabase/ssr'
 import { Message, ConversationWithDetails } from '@/types/database'
 import { sendMessage } from '@/app/actions/chat'
-import { generateTrioResponse } from '@/app/actions/ai'
-import { ArrowRight, Sparkles, User, Send } from 'lucide-react'
+import { generateSuggestions, markInterested, getConversationMeta } from '@/app/actions/chat-suggestions'
+import { ArrowRight, Sparkles, Send, Clock, Coffee, ExternalLink } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import Link from 'next/link'
 import { toast } from 'sonner'
@@ -16,11 +16,49 @@ interface ChatWindowProps {
     currentUserId: string
 }
 
+// ─── Helper: parse meetup cards from message content ─────────────────────────
+
+interface MeetupPlace {
+    name: string
+    category: string
+    mapsQuery: string
+}
+
+function parseMeetupPlaces(content: string): { text: string; places: MeetupPlace[] } | null {
+    const match = content.match(/\[MEETUP_PLACES\]([\s\S]*?)\[\/MEETUP_PLACES\]/)
+    if (!match) return null
+    try {
+        const places = JSON.parse(match[1]) as MeetupPlace[]
+        const text = content.replace(/\n?\n?\[MEETUP_PLACES\][\s\S]*?\[\/MEETUP_PLACES\]/, '').trim()
+        return { text, places }
+    } catch {
+        return null
+    }
+}
+
+// ─── Helper: format countdown ────────────────────────────────────────────────
+
+function formatCountdown(expiresAt: string | null): string {
+    if (!expiresAt) return '24:00:00'
+    const remaining = Math.max(0, new Date(expiresAt).getTime() - Date.now())
+    const h = Math.floor(remaining / 3600000)
+    const m = Math.floor((remaining % 3600000) / 60000)
+    const s = Math.floor((remaining % 60000) / 1000)
+    return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`
+}
+
+// ─── Main Component ──────────────────────────────────────────────────────────
+
 export default function ChatWindow({ conversation, initialMessages, currentUserId }: ChatWindowProps) {
     const [messages, setMessages] = useState<Message[]>(initialMessages)
     const [newMessage, setNewMessage] = useState('')
     const [isSending, setIsSending] = useState(false)
-    const [isAiLoading, setIsAiLoading] = useState(false)
+    const [suggestions, setSuggestions] = useState<string[]>([])
+    const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false)
+    const [interested, setInterested] = useState(false)
+    const [interestLoading, setInterestLoading] = useState(false)
+    const [timerExpiry, setTimerExpiry] = useState<string | null>(conversation.timer_expires_at)
+    const [countdown, setCountdown] = useState('24:00:00')
     const endRef = useRef<HTMLDivElement>(null)
 
     const supabase = createBrowserClient(
@@ -28,14 +66,40 @@ export default function ChatWindow({ conversation, initialMessages, currentUserI
         process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
     )
 
+    // ─── Scroll to bottom ────────────────────────────────────────────────────
+
     useEffect(() => {
         endRef.current?.scrollIntoView({ behavior: 'smooth' })
     }, [messages])
 
+    // ─── Reset on conversation change ────────────────────────────────────────
+
     useEffect(() => {
         setMessages(initialMessages)
         setNewMessage('')
+        setSuggestions([])
+        setTimerExpiry(conversation.timer_expires_at)
     }, [conversation.id, initialMessages])
+
+    // ─── Load initial meta (interest state) ──────────────────────────────────
+
+    useEffect(() => {
+        getConversationMeta(conversation.id).then(meta => {
+            setInterested(meta.isInterested)
+            setTimerExpiry(meta.timerExpiresAt)
+        }).catch(() => { })
+    }, [conversation.id])
+
+    // ─── Countdown timer tick ────────────────────────────────────────────────
+
+    useEffect(() => {
+        const tick = () => setCountdown(formatCountdown(timerExpiry))
+        tick()
+        const interval = setInterval(tick, 1000)
+        return () => clearInterval(interval)
+    }, [timerExpiry])
+
+    // ─── Realtime message subscription ───────────────────────────────────────
 
     useEffect(() => {
         const channel = supabase
@@ -63,6 +127,56 @@ export default function ChatWindow({ conversation, initialMessages, currentUserI
         }
     }, [conversation.id, supabase])
 
+    // ─── Realtime conversation updates (timer resets, interest) ───────────────
+
+    useEffect(() => {
+        const channel = supabase
+            .channel(`conv-meta:${conversation.id}`)
+            .on(
+                'postgres_changes',
+                {
+                    event: 'UPDATE',
+                    schema: 'public',
+                    table: 'conversations',
+                    filter: `id=eq.${conversation.id}`
+                },
+                (payload) => {
+                    const updated = payload.new as any
+                    if (updated.timer_expires_at) {
+                        setTimerExpiry(updated.timer_expires_at)
+                    }
+                }
+            )
+            .subscribe()
+
+        return () => {
+            supabase.removeChannel(channel)
+        }
+    }, [conversation.id, supabase])
+
+    // ─── Load AI suggestions when messages change ────────────────────────────
+
+    const loadSuggestions = useCallback(async () => {
+        if (messages.length < 1) return
+        setIsLoadingSuggestions(true)
+        try {
+            const results = await generateSuggestions(conversation.id)
+            setSuggestions(results)
+        } catch {
+            setSuggestions([])
+        } finally {
+            setIsLoadingSuggestions(false)
+        }
+    }, [conversation.id, messages.length])
+
+    useEffect(() => {
+        // Load suggestions after messages update, with a small debounce
+        const timeout = setTimeout(loadSuggestions, 1000)
+        return () => clearTimeout(timeout)
+    }, [messages.length])
+
+    // ─── Send message ────────────────────────────────────────────────────────
+
     const handleSend = async (e?: React.FormEvent) => {
         e?.preventDefault()
         if (!newMessage.trim() || isSending) return
@@ -82,6 +196,7 @@ export default function ChatWindow({ conversation, initialMessages, currentUserI
 
         setMessages(prev => [...prev, optimisticMsg])
         setNewMessage('')
+        setSuggestions([])
 
         try {
             await sendMessage(conversation.id, content, tempId)
@@ -95,20 +210,33 @@ export default function ChatWindow({ conversation, initialMessages, currentUserI
         }
     }
 
-    const handleAiTrigger = async () => {
-        if (isAiLoading) return
-        setIsAiLoading(true)
-        toast.info('Kintsu is thinking...')
+    // ─── Handle suggestion click (populate input, don't send) ────────────────
+
+    const handleSuggestionClick = (suggestion: string) => {
+        setNewMessage(suggestion)
+    }
+
+    // ─── Handle interested click ─────────────────────────────────────────────
+
+    const handleInterestClick = async () => {
+        if (interested || interestLoading) return
+        setInterestLoading(true)
         try {
-            await generateTrioResponse(conversation.id)
-            toast.success('Kintsu responded!')
-        } catch (error) {
-            console.error('AI generation failed', error)
-            toast.error('Kintsu failed to respond.')
+            const result = await markInterested(conversation.id)
+            if (!result.alreadyInterested) {
+                setInterested(true)
+                toast.success('Noted! ☕', { description: "We'll keep that between us." })
+            }
+        } catch {
+            toast.error('Something went wrong')
         } finally {
-            setIsAiLoading(false)
+            setInterestLoading(false)
         }
     }
+
+    // ─── Render ──────────────────────────────────────────────────────────────
+
+    const trioId = process.env.NEXT_PUBLIC_TRIO_USER_ID
 
     return (
         <div className="flex h-full flex-col bg-cream">
@@ -124,7 +252,7 @@ export default function ChatWindow({ conversation, initialMessages, currentUserI
                                 <img
                                     src={conversation.partner_avatar}
                                     className="w-full h-full object-cover rounded-full"
-                                    alt={conversation.partner_name}
+                                    alt={conversation.partner_name || ''}
                                 />
                             ) : (
                                 <div className="w-full h-full rounded-full bg-rust flex items-center justify-center text-white font-bold text-sm">
@@ -137,14 +265,14 @@ export default function ChatWindow({ conversation, initialMessages, currentUserI
                             <p className="text-[10px] font-bold uppercase tracking-widest text-teal">Online</p>
                         </div>
                     </div>
-                    <button
-                        onClick={handleAiTrigger}
-                        disabled={isAiLoading}
-                        className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${isAiLoading ? 'bg-mustard/30' : 'bg-mustard hover:scale-105'}`}
-                        title="Ask Kintsu"
-                    >
-                        <Sparkles className={`w-5 h-5 text-charcoal ${isAiLoading ? 'animate-spin' : ''}`} />
-                    </button>
+
+                    {/* Timer */}
+                    <div className="flex items-center gap-2 bg-sand/50 px-3 py-1.5 rounded-full">
+                        <Clock className="w-3 h-3 text-rust" />
+                        <span className="text-xs font-mono font-bold text-charcoal">
+                            {countdown}
+                        </span>
+                    </div>
                 </div>
             </div>
 
@@ -152,16 +280,16 @@ export default function ChatWindow({ conversation, initialMessages, currentUserI
             <div className="flex-1 overflow-y-auto px-4 py-6 scroll-smooth">
                 <div className="space-y-8">
                     <AnimatePresence initial={false}>
-                        {messages.map((msg, index) => {
-                            const trioId = process.env.NEXT_PUBLIC_TRIO_USER_ID
+                        {messages.map((msg) => {
                             const isTrio = msg.sender_id === trioId
                             const isMe = msg.sender_id === currentUserId
                             const isAi = msg.is_ai_generated
-
                             const alignRight = isMe && !isAi && !isTrio
 
                             // AI / Kintsu message — centered card
                             if (isTrio || isAi) {
+                                const meetup = parseMeetupPlaces(msg.content)
+
                                 return (
                                     <motion.div
                                         key={msg.id}
@@ -174,8 +302,39 @@ export default function ChatWindow({ conversation, initialMessages, currentUserI
                                                 Kintsu Host
                                             </div>
                                             <p className="text-charcoal text-sm font-medium leading-relaxed whitespace-pre-wrap">
-                                                {msg.content}
+                                                {meetup ? meetup.text : msg.content}
                                             </p>
+
+                                            {/* Meetup place cards */}
+                                            {meetup && meetup.places.length > 0 && (
+                                                <div className="mt-4 bg-cream rounded-2xl overflow-hidden border border-sand text-left">
+                                                    <div className="bg-mustard p-3 flex items-center space-x-2">
+                                                        <div className="w-2 h-2 rounded-full bg-charcoal" />
+                                                        <span className="text-xs font-bold uppercase tracking-widest text-charcoal">
+                                                            The Plan
+                                                        </span>
+                                                    </div>
+                                                    <div className="p-1">
+                                                        {meetup.places.map((place, i) => (
+                                                            <a
+                                                                key={i}
+                                                                href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(place.mapsQuery)}`}
+                                                                target="_blank"
+                                                                rel="noopener noreferrer"
+                                                                className="w-full p-3 bg-white rounded-xl mb-1 last:mb-0 flex justify-between items-center border border-gray-100 hover:border-rust hover:shadow-sm transition-all cursor-pointer group text-left block"
+                                                            >
+                                                                <div className="flex flex-col items-start">
+                                                                    <p className="font-bold text-sm text-charcoal">{place.name}</p>
+                                                                    <p className="text-[10px] uppercase opacity-60 text-charcoal">
+                                                                        {place.category}
+                                                                    </p>
+                                                                </div>
+                                                                <ExternalLink className="w-4 h-4 text-gray-300 group-hover:text-rust transition-colors shrink-0" />
+                                                            </a>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
                                         </div>
                                     </motion.div>
                                 )
@@ -211,8 +370,55 @@ export default function ChatWindow({ conversation, initialMessages, currentUserI
                 </div>
             </div>
 
-            {/* Input Area */}
-            <div className="p-4 bg-cream border-t border-sand sticky bottom-0 z-20">
+            {/* Footer */}
+            <div className="bg-cream p-4 pb-8 sticky bottom-0 z-20 border-t border-sand relative">
+                {/* Interested Button — floating above */}
+                <div className="absolute left-0 right-0 -top-16 flex justify-center pointer-events-none">
+                    <button
+                        onClick={handleInterestClick}
+                        disabled={interested || interestLoading}
+                        className={`pointer-events-auto flex items-center gap-3 px-8 py-3 rounded-full font-bold uppercase text-xs tracking-widest transition-all shadow-lg ${interested
+                            ? 'bg-teal text-white ring-2 ring-offset-2 ring-teal'
+                            : 'bg-white text-charcoal hover:bg-rust hover:text-white border border-sand'
+                            } disabled:opacity-70`}
+                    >
+                        <Coffee className="w-4 h-4" />
+                        {interestLoading ? '...' : interested ? 'Interested' : 'Interested?'}
+                    </button>
+                </div>
+
+                {/* Suggested Replies */}
+                <AnimatePresence>
+                    {suggestions.length > 0 && (
+                        <motion.div
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: 10 }}
+                            className="flex flex-col space-y-3 mb-4"
+                        >
+                            <div className="flex items-center space-x-2">
+                                <Sparkles className="w-4 h-4 text-mustard fill-mustard" />
+                                <span className="text-xs font-bold text-charcoal uppercase tracking-widest">
+                                    Suggested Replies
+                                </span>
+                            </div>
+                            <div className="flex flex-col gap-2">
+                                {suggestions.map((opt, i) => (
+                                    <button
+                                        key={i}
+                                        onClick={() => handleSuggestionClick(opt)}
+                                        className="bg-white text-charcoal text-sm font-medium px-5 py-3 rounded-xl shadow-sm border border-sand hover:border-rust hover:text-rust transition-colors text-left flex items-center group"
+                                    >
+                                        <div className="w-2 h-2 rounded-full bg-sand mr-3 group-hover:bg-rust transition-colors shrink-0" />
+                                        {opt}
+                                    </button>
+                                ))}
+                            </div>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
+
+                {/* Input */}
                 <form onSubmit={handleSend} className="flex items-center gap-2">
                     <input
                         type="text"
@@ -224,7 +430,8 @@ export default function ChatWindow({ conversation, initialMessages, currentUserI
                     {newMessage.trim() && (
                         <button
                             type="submit"
-                            className="w-12 h-12 bg-charcoal text-white rounded-full flex items-center justify-center hover:scale-105 transition-transform"
+                            disabled={isSending}
+                            className="w-12 h-12 bg-charcoal text-white rounded-full flex items-center justify-center hover:scale-105 transition-transform disabled:opacity-50"
                         >
                             <Send className="w-5 h-5" />
                         </button>

@@ -5,6 +5,7 @@ import { createClient } from '@/utils/supabase/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { ConversationWithDetails, Message, Participant } from '@/types/database'
 import { evaluateConversationState, generateTrioResponse, UserProfile } from './ai'
+import { generateMeetupSuggestion } from './chat-suggestions'
 
 export async function getConversations(): Promise<ConversationWithDetails[]> {
     const supabase = await createClient()
@@ -71,6 +72,11 @@ export async function getConversations(): Promise<ConversationWithDetails[]> {
             id: conv.id,
             created_at: conv.created_at,
             is_active: conv.is_active,
+            timer_expires_at: conv.timer_expires_at || null,
+            last_message_sender_id: conv.last_message_sender_id || null,
+            interested_user_ids: conv.interested_user_ids || [],
+            meetup_suggested: conv.meetup_suggested || false,
+            meetup_trigger_after: conv.meetup_trigger_after || null,
             partner_name: partnerName,
             partner_avatar: partnerAvatar,
         })
@@ -102,6 +108,12 @@ export async function sendMessage(conversationId: string, content: string, id?: 
 
     if (!user) return false
 
+    const adminClient = createSupabaseClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.SUPABASE_SERVICE_ROLE_KEY!,
+        { auth: { autoRefreshToken: false, persistSession: false } }
+    )
+
     const { error } = await supabase
         .from('messages')
         .insert({
@@ -117,9 +129,50 @@ export async function sendMessage(conversationId: string, content: string, id?: 
         return false
     }
 
+    // --- TIMER RESET (alternating sender only) ---
+    try {
+        const { data: conv } = await adminClient
+            .from('conversations')
+            .select('last_message_sender_id, meetup_trigger_after, meetup_suggested')
+            .eq('id', conversationId)
+            .single()
+
+        if (conv) {
+            const updatePayload: any = { last_message_sender_id: user.id }
+
+            // Only reset timer if a DIFFERENT user sent the last message
+            if (conv.last_message_sender_id !== user.id) {
+                updatePayload.timer_expires_at = new Date(
+                    Date.now() + 24 * 60 * 60 * 1000
+                ).toISOString()
+            }
+
+            await adminClient
+                .from('conversations')
+                .update(updatePayload)
+                .eq('id', conversationId)
+
+            // --- MEETUP TRIGGER CHECK ---
+            if (conv.meetup_trigger_after && !conv.meetup_suggested) {
+                const { count } = await adminClient
+                    .from('messages')
+                    .select('id', { count: 'exact', head: true })
+                    .eq('conversation_id', conversationId)
+
+                if (count && count >= conv.meetup_trigger_after) {
+                    // Fire meetup suggestion in background
+                    generateMeetupSuggestion(conversationId).catch(err =>
+                        console.error('Meetup suggestion error:', err)
+                    )
+                }
+            }
+        }
+    } catch (e) {
+        console.error('Timer/meetup update error:', e)
+    }
+
     // --- TRIGGER AI EVALUATION ---
     try {
-        // 1. Fetch Participants
         const { data: participants } = await supabase
             .from('participants')
             .select('user_id')
@@ -133,21 +186,14 @@ export async function sendMessage(conversationId: string, content: string, id?: 
                 .in('id', userIds)
 
             if (profiles) {
-                // We don't await this so the user doesn't wait for the AI to think
-                // However, in Server Actions you usually should await or use a queue.
-                // For this demo, we'll await it but it might add delay. 
-                // To be faster, we could use `void` but Vercel might kill the process.
-                // Let's await for reliability in this prototype.
-                // AWAIT execution to ensure it finishes before Vercel kills the lambda
                 const shouldSpeak = await evaluateConversationState(conversationId, profiles)
                 if (shouldSpeak) {
                     await generateTrioResponse(conversationId, profiles)
                 }
             }
         }
-
     } catch (e) {
-        console.error("AI trigger error:", e)
+        console.error('AI trigger error:', e)
     }
 
     return true

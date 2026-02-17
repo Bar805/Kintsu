@@ -10,6 +10,11 @@ export interface Conversation {
   id: string;
   created_at: string;
   is_active: boolean;
+  timer_expires_at: string | null;
+  last_message_sender_id: string | null;
+  interested_user_ids: string[];
+  meetup_suggested: boolean;
+  meetup_trigger_after: number | null;
 }
 
 export interface Message {
