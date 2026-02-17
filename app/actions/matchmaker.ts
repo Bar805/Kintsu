@@ -95,7 +95,7 @@ function getAdminClient() {
 
 async function callGemini(systemPrompt: string, history: { role: string; content: string }[]): Promise<string> {
     const apiKey = process.env.GOOGLE_API_KEY
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`
 
     const contents = [
         { role: 'user', parts: [{ text: systemPrompt }] },
@@ -105,25 +105,39 @@ async function callGemini(systemPrompt: string, history: { role: string; content
         }))
     ]
 
-    const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            contents,
-            generationConfig: { responseMimeType: 'application/json' }
-        })
+    const body = JSON.stringify({
+        contents,
+        generationConfig: { responseMimeType: 'application/json' }
     })
 
-    if (!response.ok) {
-        const err = await response.text()
-        console.error('Gemini API Error:', err)
-        throw new Error(`API Error: ${response.status}`)
+    // Retry with backoff for rate limits
+    for (let attempt = 0; attempt < 3; attempt++) {
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body
+        })
+
+        if (response.status === 429) {
+            const wait = Math.pow(2, attempt + 1) * 1000 // 2s, 4s, 8s
+            console.log(`Gemini rate limited (attempt ${attempt + 1}/3), retrying in ${wait}ms...`)
+            await new Promise(r => setTimeout(r, wait))
+            continue
+        }
+
+        if (!response.ok) {
+            const err = await response.text()
+            console.error('Gemini API Error:', err)
+            throw new Error(`API Error: ${response.status}`)
+        }
+
+        const data = await response.json()
+        const text = data.candidates?.[0]?.content?.parts?.[0]?.text
+        if (!text) throw new Error('No response from AI')
+        return text
     }
 
-    const data = await response.json()
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text
-    if (!text) throw new Error('No response from AI')
-    return text
+    throw new Error('Gemini API rate limited after 3 retries')
 }
 
 // ─── 1. getActiveMatchRequest ────────────────────────────────────────────────

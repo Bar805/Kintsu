@@ -19,23 +19,37 @@ async function callGemini(systemPrompt: string, userPrompt: string): Promise<str
     const apiKey = process.env.GOOGLE_API_KEY
     if (!apiKey) throw new Error('GOOGLE_API_KEY not set')
 
-    const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
-        {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                system_instruction: { parts: [{ text: systemPrompt }] },
-                contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
-                generationConfig: { temperature: 0.9, maxOutputTokens: 1024 },
-            }),
-        }
-    )
+    const body = JSON.stringify({
+        system_instruction: { parts: [{ text: systemPrompt }] },
+        contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
+        generationConfig: { temperature: 0.9, maxOutputTokens: 1024 },
+    })
 
-    const data = await res.json()
-    const raw = data?.candidates?.[0]?.content?.parts?.[0]?.text || ''
-    // Strip markdown fencing if present
-    return raw.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
+    // Retry with backoff for rate limits
+    for (let attempt = 0; attempt < 3; attempt++) {
+        const res = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
+            {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body,
+            }
+        )
+
+        if (res.status === 429) {
+            const wait = Math.pow(2, attempt + 1) * 1000
+            console.log(`Gemini rate limited (suggestions, attempt ${attempt + 1}/3), retrying in ${wait}ms...`)
+            await new Promise(r => setTimeout(r, wait))
+            continue
+        }
+
+        const data = await res.json()
+        const raw = data?.candidates?.[0]?.content?.parts?.[0]?.text || ''
+        // Strip markdown fencing if present
+        return raw.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
+    }
+
+    throw new Error('Gemini API rate limited after 3 retries')
 }
 
 // ─── 1. Generate Reply Suggestions ──────────────────────────────────────────
