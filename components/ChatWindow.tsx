@@ -127,32 +127,17 @@ export default function ChatWindow({ conversation, initialMessages, currentUserI
         }
     }, [conversation.id, supabase])
 
-    // ─── Realtime conversation updates (timer resets, interest) ───────────────
+    // ─── Poll conversation meta when messages change (timer, interest) ────────
 
     useEffect(() => {
-        const channel = supabase
-            .channel(`conv-meta:${conversation.id}`)
-            .on(
-                'postgres_changes',
-                {
-                    event: 'UPDATE',
-                    schema: 'public',
-                    table: 'conversations',
-                    filter: `id=eq.${conversation.id}`
-                },
-                (payload) => {
-                    const updated = payload.new as any
-                    if (updated.timer_expires_at) {
-                        setTimerExpiry(updated.timer_expires_at)
-                    }
-                }
-            )
-            .subscribe()
-
-        return () => {
-            supabase.removeChannel(channel)
+        const refreshMeta = async () => {
+            try {
+                const meta = await getConversationMeta(conversation.id)
+                setTimerExpiry(meta.timerExpiresAt)
+            } catch { }
         }
-    }, [conversation.id, supabase])
+        refreshMeta()
+    }, [conversation.id, messages.length])
 
     // ─── Load AI suggestions when messages change ────────────────────────────
 

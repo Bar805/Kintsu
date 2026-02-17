@@ -282,13 +282,23 @@ export async function getConversationMeta(
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) throw new Error('Unauthorized')
 
-    const { data: conv } = await supabase
+    const admin = getAdminClient()
+
+    const { data: conv, error } = await admin
         .from('conversations')
         .select('timer_expires_at, interested_user_ids, meetup_suggested')
         .eq('id', conversationId)
         .single()
 
-    if (!conv) throw new Error('Conversation not found')
+    if (error || !conv) {
+        console.error('getConversationMeta error:', error?.message)
+        // Return safe defaults instead of throwing
+        return {
+            timerExpiresAt: null,
+            isInterested: false,
+            meetupSuggested: false,
+        }
+    }
 
     return {
         timerExpiresAt: conv.timer_expires_at,
