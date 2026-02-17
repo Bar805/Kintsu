@@ -7,8 +7,8 @@ const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 
 
 export const metadata: Metadata = {
-    title: "Trio",
-    description: "Social connection app",
+    title: "Kintsu",
+    description: "Your social catalyst",
 };
 
 export default function RootLayout({

@@ -77,7 +77,7 @@ export default function PromptRoulette({
         <div className="space-y-6">
             {/* Prompt Cards */}
             <div className="space-y-3">
-                <p className="text-sm font-semibold text-gray-500 uppercase tracking-wider">
+                <p className="text-xs font-bold uppercase tracking-widest text-charcoal">
                     Pick a prompt
                 </p>
                 <div className="grid gap-3">
@@ -92,14 +92,14 @@ export default function PromptRoulette({
                                 transition={{ delay: index * 0.08, duration: 0.3 }}
                                 onClick={() => handleSelectPrompt(prompt)}
                                 className={`
-                  w-full text-left p-4 rounded-2xl border-2 transition-all duration-200
-                  ${isActive
-                                        ? 'border-amber-400 bg-amber-50/80 shadow-md shadow-amber-100/50'
-                                        : 'border-gray-100 bg-white hover:border-gray-200 hover:shadow-sm'
+                                    w-full text-left p-4 rounded-2xl border-2 transition-all duration-200
+                                    ${isActive
+                                        ? 'border-rust bg-rust/5 shadow-md'
+                                        : 'border-sand bg-white hover:border-rust/40 hover:shadow-sm'
                                     }
-                `}
+                                `}
                             >
-                                <span className={`text-base font-semibold ${isActive ? 'text-amber-700' : 'text-gray-700'}`}>
+                                <span className={`text-base font-semibold ${isActive ? 'text-rust' : 'text-charcoal'}`}>
                                     {prompt}
                                 </span>
                             </motion.button>
@@ -124,7 +124,7 @@ export default function PromptRoulette({
                                 onChange={(e) => handleAnswerChange(e.target.value)}
                                 placeholder="Type your answer here..."
                                 rows={3}
-                                className="w-full p-4 bg-gray-50 border-0 rounded-2xl focus:bg-white focus:ring-2 focus:ring-amber-500/20 text-gray-900 font-medium transition-all resize-none outline-none placeholder:text-gray-400"
+                                className="w-full p-4 bg-cream border border-sand rounded-2xl focus:bg-white focus:ring-2 focus:ring-rust/20 focus:border-rust text-charcoal font-medium transition-all resize-none outline-none placeholder:text-gray-400"
                                 maxLength={280}
                             />
                             <div className="flex items-center justify-between">
@@ -137,13 +137,13 @@ export default function PromptRoulette({
                                     onClick={handleGenerate}
                                     whileTap={{ scale: 0.95 }}
                                     className={`
-                    inline-flex items-center gap-2 px-6 py-3 rounded-full font-bold text-sm
-                    transition-all duration-200 shadow-lg
-                    ${!answer.trim() || isGenerating
-                                            ? 'bg-gray-200 text-gray-400 cursor-not-allowed shadow-none'
-                                            : 'bg-gradient-to-r from-amber-500 to-orange-500 text-white hover:shadow-xl hover:shadow-amber-200/50 active:scale-95'
+                                        inline-flex items-center gap-2 px-6 py-3 rounded-full font-bold text-sm
+                                        transition-all duration-200 shadow-lg
+                                        ${!answer.trim() || isGenerating
+                                            ? 'bg-sand text-gray-400 cursor-not-allowed shadow-none'
+                                            : 'bg-charcoal text-white hover:bg-rust hover:shadow-xl active:scale-95'
                                         }
-                  `}
+                                    `}
                                 >
                                     {isGenerating ? (
                                         <>
@@ -152,7 +152,7 @@ export default function PromptRoulette({
                                         </>
                                     ) : (
                                         <>
-                                            <Sparkles size={16} />
+                                            <Sparkles size={16} className="text-mustard" />
                                             {hasGenerated ? 'Regenerate Bio' : 'Generate My Bio'}
                                         </>
                                     )}
@@ -174,11 +174,11 @@ export default function PromptRoulette({
                         className="space-y-3"
                     >
                         <div className="flex items-center gap-2">
-                            <div className="p-1.5 bg-gradient-to-r from-amber-500 to-orange-500 rounded-lg">
-                                <Sparkles size={14} className="text-white" />
+                            <div className="p-1.5 bg-mustard rounded-lg">
+                                <Sparkles size={14} className="text-charcoal" />
                             </div>
-                            <span className="text-sm font-bold text-gray-700">Your AI Bio</span>
-                            <span className="text-xs text-gray-400 font-medium flex items-center gap-1">
+                            <span className="text-xs font-bold uppercase tracking-widest text-charcoal">Your AI Bio</span>
+                            <span className="text-[10px] text-gray-400 font-bold uppercase tracking-widest flex items-center gap-1">
                                 <Edit3 size={10} /> editable
                             </span>
                         </div>
@@ -188,7 +188,7 @@ export default function PromptRoulette({
                                 value={aiSummary}
                                 onChange={(e) => onAiSummaryChange(e.target.value)}
                                 rows={4}
-                                className="w-full p-5 bg-gradient-to-br from-amber-50 to-orange-50 border-2 border-amber-200/60 rounded-2xl text-gray-800 font-medium leading-relaxed transition-all resize-none outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-300"
+                                className="w-full p-5 bg-mustard/10 border-2 border-mustard/40 rounded-2xl text-charcoal font-medium leading-relaxed transition-all resize-none outline-none focus:ring-2 focus:ring-mustard/20 focus:border-mustard"
                             />
                         </div>
                     </motion.div>

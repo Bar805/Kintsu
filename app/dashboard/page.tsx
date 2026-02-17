@@ -2,18 +2,17 @@ import { createClient } from '@/utils/supabase/server'
 import { Message } from '@/types/database'
 import { getConversations, getMessages } from '@/app/actions/chat'
 import ChatWindow from '@/components/ChatWindow'
-import MatchmakerTrigger from '@/components/MatchmakerTrigger'
 import ConversationList from '@/components/ConversationList'
+import MatchmakerTrigger from '@/components/MatchmakerTrigger'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
+import { Home, User, Settings, Bell, Plus, Sparkles } from 'lucide-react'
 
-// Define the Props type for Next.js 15+
 type Props = {
     searchParams: Promise<{ conversationId?: string }>
 }
 
 export default async function DashboardPage(props: Props) {
-    // 1. Await the params (Fix for Next.js 15)
     const searchParams = await props.searchParams
     const selectedConversationId = searchParams.conversationId
 
@@ -24,7 +23,6 @@ export default async function DashboardPage(props: Props) {
         redirect('/')
     }
 
-    // 2. Fetch data
     const conversations = await getConversations()
     const selectedConversation = conversations.find(c => c.id === selectedConversationId)
 
@@ -33,55 +31,57 @@ export default async function DashboardPage(props: Props) {
         initialMessages = await getMessages(selectedConversationId)
     }
 
+    // If a conversation is selected, show full-screen chat
+    if (selectedConversationId && selectedConversation) {
+        return (
+            <div className="h-[100dvh] bg-cream overflow-hidden font-sans">
+                <ChatWindow
+                    conversation={selectedConversation}
+                    initialMessages={initialMessages}
+                    currentUserId={user.id}
+                />
+            </div>
+        )
+    }
+
+    // Card-based home screen
     return (
-        <div className="flex h-[100dvh] bg-gray-50 overflow-hidden font-sans">
-            {/* Sidebar */}
-            <div className={`
-                w-full md:w-80 lg:w-96 bg-white border-r border-gray-200 flex flex-col 
-                ${selectedConversationId ? 'hidden md:flex' : 'flex'}
-            `}>
-                {/* Header */}
-                <div className="h-16 px-6 border-b border-gray-100 flex items-center justify-between shrink-0">
-                    <h1 className="text-2xl font-bold text-primary tracking-tight">Trio</h1>
-
-                    <div className="flex items-center gap-2">
-                        {/* Matchmaker Trigger */}
-
-
-                        {/* NEW Profile Link */}
-                        <Link href="/dashboard/profile" className="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center text-gray-600 hover:bg-gray-200 transition-colors">
-                            {/* User Icon */}
-                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
-                        </Link>
-                    </div>
+        <div className="flex flex-col h-[100dvh] bg-cream font-sans text-charcoal">
+            {/* Header */}
+            <div className="px-6 py-5 flex justify-between items-center shrink-0">
+                <div className="flex items-center gap-1">
+                    <div className="w-5 h-5 rounded-full bg-rust"></div>
+                    <div className="w-5 h-5 bg-teal"></div>
+                    <span className="font-bold text-xl tracking-tight ml-2">kintsu</span>
                 </div>
+                <div className="w-10 h-10 bg-white rounded-full border border-sand flex items-center justify-center relative">
+                    <Bell className="w-5 h-5 text-charcoal" />
+                </div>
+            </div>
 
-                {/* Matchmaker CTA */}
-                <div className="p-4 pb-0">
+            {/* Main Scrollable Content */}
+            <div className="flex-1 overflow-y-auto px-6 no-scrollbar">
+                {/* Request Connection Card */}
+                <div className="mb-8">
                     <MatchmakerTrigger />
                 </div>
 
-                {/* Conversation List */}
+                {/* Active Chats Section */}
                 <ConversationList initialConversations={conversations} currentUserId={user.id} />
             </div>
 
-            {/* Main Chat Area */}
-            <div className={`flex-1 flex flex-col h-full bg-white relative ${!selectedConversationId ? 'hidden md:flex' : 'flex'}`}>
-                {selectedConversationId && selectedConversation ? (
-                    <ChatWindow
-                        conversation={selectedConversation}
-                        initialMessages={initialMessages}
-                        currentUserId={user.id}
-                    />
-                ) : (
-                    // Empty State
-                    <div className="flex-1 flex flex-col items-center justify-center text-gray-300">
-                        <div className="w-20 h-20 bg-gray-50 rounded-full flex items-center justify-center mb-6">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
-                        </div>
-                        <p className="text-lg font-medium text-gray-400">Select a conversation to start chatting</p>
-                    </div>
-                )}
+            {/* Bottom Nav */}
+            <div className="h-20 border-t border-sand flex items-center justify-around px-6 bg-white shrink-0">
+                <button className="flex flex-col items-center gap-1 text-rust">
+                    <Home className="w-6 h-6 fill-current" />
+                    <span className="text-[10px] font-bold uppercase tracking-widest">Home</span>
+                </button>
+                <Link href="/dashboard/profile" className="flex flex-col items-center gap-1 text-gray-300 hover:text-charcoal transition-colors">
+                    <User className="w-6 h-6" />
+                </Link>
+                <button className="flex flex-col items-center gap-1 text-gray-300 hover:text-charcoal transition-colors">
+                    <Settings className="w-6 h-6" />
+                </button>
             </div>
         </div>
     )

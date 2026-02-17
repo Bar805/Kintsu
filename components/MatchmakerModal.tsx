@@ -19,17 +19,15 @@ type Message = {
 }
 
 export default function MatchmakerModal({ isOpen, onClose }: MatchmakerModalProps) {
-    const [input, setInput] = useState('')
-    // Initialize with a static greeting so the AI doesn't jump the gun
     const [messages, setMessages] = useState<Message[]>([
-        { role: 'model', content: "Hey! I'm Trio. Tell me a bit about what you're looking for, and I'll see who I know." }
+        { role: 'model', content: "Hey! I'm Kintsu — tell me who you want to meet. What kind of connection are you looking for?" }
     ])
+    const [input, setInput] = useState('')
     const [loading, setLoading] = useState(false)
     const [matchData, setMatchData] = useState<MatchmakerResponse | null>(null)
     const scrollRef = useRef<HTMLDivElement>(null)
     const router = useRouter()
 
-    // Auto-scroll to bottom
     useEffect(() => {
         if (scrollRef.current) {
             scrollRef.current.scrollTop = scrollRef.current.scrollHeight
@@ -38,28 +36,23 @@ export default function MatchmakerModal({ isOpen, onClose }: MatchmakerModalProp
 
     const handleSend = async () => {
         if (!input.trim() || loading) return
-
         const userMsg = input.trim()
         setInput('')
+        setMessages(prev => [...prev, { role: 'user', content: userMsg }])
         setLoading(true)
 
-        // Optimistic update
-        const newHistory: Message[] = [...messages, { role: 'user', content: userMsg }]
-        setMessages(newHistory)
-
         try {
-            const response = await askMatchmaker(newHistory)
+            const history = [...messages.map(m => ({ role: m.role, content: m.content })), { role: 'user' as const, content: userMsg }]
+            const result = await askMatchmaker(history)
 
-            if (response.matchFound) {
-                setMatchData(response)
-                setMessages(prev => [...prev, { role: 'model', content: response.reply }])
-            } else {
-                setMessages(prev => [...prev, { role: 'model', content: response.reply }])
+            setMessages(prev => [...prev, { role: 'model', content: result.reply }])
+
+            if (result.matchFound) {
+                setMatchData(result)
             }
-
         } catch (error) {
-            console.error(error)
-            setMessages(prev => [...prev, { role: 'model', content: "Sorry, I got a bit distracted. Can you say that again?" }])
+            console.error('Matchmaker error:', error)
+            setMessages(prev => [...prev, { role: 'model', content: "Sorry, I hit a snag. Try again?" }])
         } finally {
             setLoading(false)
         }
@@ -73,22 +66,17 @@ export default function MatchmakerModal({ isOpen, onClose }: MatchmakerModalProp
     }
 
     const handleRevealMatch = async () => {
-        if (!matchData?.matchId || !matchData?.introMessage) return
-
+        if (!matchData?.matchId) return
         setLoading(true)
         try {
-            const conversationId = await createMatchConversation(matchData.matchId, matchData.introMessage)
-            if (conversationId) {
-                toast.success('Match created! Redirecting...')
-                router.push(`/dashboard?conversationId=${conversationId}`)
-                onClose()
-            } else {
-                console.error("Failed to create conversation (returned null)")
-                toast.error('Could not create match.')
-            }
-        } catch (e) {
-            console.error('Failed to create match', e)
-            toast.error('An unexpected error occurred.')
+            const convoId = await createMatchConversation(matchData.matchId!)
+            toast.success(`You're now connected! 🎉`, { duration: 3000 })
+            onClose()
+            router.push(`/dashboard?conversationId=${convoId}`)
+            router.refresh()
+        } catch (error: any) {
+            console.error('Failed to create conversation:', error)
+            toast.error(error.message || 'Failed to start conversation')
         } finally {
             setLoading(false)
         }
@@ -108,36 +96,36 @@ export default function MatchmakerModal({ isOpen, onClose }: MatchmakerModalProp
                     initial={{ scale: 0.95, opacity: 0, y: 20 }}
                     animate={{ scale: 1, opacity: 1, y: 0 }}
                     exit={{ scale: 0.95, opacity: 0, y: 20 }}
-                    className="w-full max-w-lg bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col h-[600px] border border-gray-100"
+                    className="w-full max-w-lg bg-white rounded-3xl shadow-2xl overflow-hidden flex flex-col h-[600px] border border-sand"
                 >
                     {/* Header */}
-                    <div className="h-16 bg-gradient-to-r from-primary/10 to-purple-500/10 border-b border-gray-100 flex items-center justify-between px-6 shrink-0">
+                    <div className="h-16 bg-cream border-b border-sand flex items-center justify-between px-6 shrink-0">
                         <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary">
+                            <div className="w-8 h-8 rounded-full bg-mustard flex items-center justify-center text-charcoal">
                                 <Sparkles size={18} />
                             </div>
                             <div>
-                                <h2 className="font-semibold text-gray-900">Trio Matchmaker</h2>
-                                <p className="text-xs text-gray-500">Finding your perfect fit</p>
+                                <h2 className="font-bold text-charcoal">Kintsu Matchmaker</h2>
+                                <p className="text-xs text-gray-400 font-medium">Finding your perfect fit</p>
                             </div>
                         </div>
-                        <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full transition-colors text-gray-400 hover:text-gray-600">
+                        <button onClick={onClose} className="p-2 hover:bg-sand rounded-full transition-colors text-gray-400 hover:text-charcoal">
                             <X size={20} />
                         </button>
                     </div>
 
                     {/* Chat Area */}
-                    <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-gray-50/50" ref={scrollRef}>
+                    <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-cream" ref={scrollRef}>
                         {messages.map((msg, idx) => (
                             <div
                                 key={idx}
                                 className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
                             >
                                 <div className={`
-                                    max-w-[80%] rounded-2xl px-5 py-3 text-sm leading-relaxed shadow-sm
+                                    max-w-[80%] px-5 py-3 text-sm leading-relaxed shadow-sm font-medium
                                     ${msg.role === 'user'
-                                        ? 'bg-primary text-white rounded-tr-none'
-                                        : 'bg-white text-gray-800 border border-gray-100 rounded-tl-none'
+                                        ? 'bg-rust text-white rounded-t-2xl rounded-bl-2xl'
+                                        : 'bg-white text-charcoal border border-sand rounded-t-2xl rounded-br-2xl'
                                     }
                                 `}>
                                     {msg.content}
@@ -147,8 +135,12 @@ export default function MatchmakerModal({ isOpen, onClose }: MatchmakerModalProp
 
                         {loading && (
                             <div className="flex justify-start">
-                                <div className="bg-white border border-gray-100 rounded-2xl rounded-tl-none px-5 py-3 shadow-sm">
-                                    <Loader2 className="w-5 h-5 animate-spin text-primary" />
+                                <div className="bg-white border border-sand rounded-t-2xl rounded-br-2xl px-5 py-3 shadow-sm">
+                                    <div className="flex space-x-1 h-2 items-center justify-center">
+                                        <div className="w-1.5 h-1.5 bg-mustard rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
+                                        <div className="w-1.5 h-1.5 bg-mustard rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
+                                        <div className="w-1.5 h-1.5 bg-mustard rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
+                                    </div>
                                 </div>
                             </div>
                         )}
@@ -157,18 +149,18 @@ export default function MatchmakerModal({ isOpen, onClose }: MatchmakerModalProp
                             <motion.div
                                 initial={{ opacity: 0, y: 20 }}
                                 animate={{ opacity: 1, y: 0 }}
-                                className="my-8 p-6 bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 rounded-2xl text-white text-center shadow-lg mx-4"
+                                className="my-8 p-6 bg-charcoal rounded-3xl text-white text-center shadow-xl mx-4"
                             >
-                                <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-4 backdrop-blur-md">
-                                    <Sparkles className="w-8 h-8 text-white" />
+                                <div className="w-16 h-16 bg-mustard rounded-full flex items-center justify-center mx-auto mb-4">
+                                    <Sparkles className="w-8 h-8 text-charcoal" />
                                 </div>
                                 <h3 className="text-2xl font-bold mb-2">It's a Match!</h3>
-                                <p className="text-white/90 mb-6 text-sm">
+                                <p className="text-white/70 mb-6 text-sm font-medium">
                                     I've found someone who fits exactly what you're looking for.
                                 </p>
                                 <button
                                     onClick={handleRevealMatch}
-                                    className="w-full bg-white text-primary font-bold py-3 px-6 rounded-xl shadow-lg hover:bg-gray-50 transition-all flex items-center justify-center gap-2 group"
+                                    className="w-full bg-rust text-white font-bold py-3 px-6 rounded-full shadow-lg hover:bg-rust/90 transition-all flex items-center justify-center gap-2 group"
                                 >
                                     <span>Meet Them Now</span>
                                     <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
@@ -179,7 +171,7 @@ export default function MatchmakerModal({ isOpen, onClose }: MatchmakerModalProp
 
                     {/* Input Area */}
                     {!matchData?.matchFound && (
-                        <div className="p-4 bg-white border-t border-gray-100">
+                        <div className="p-4 bg-white border-t border-sand">
                             <div className="relative flex items-center gap-2">
                                 <input
                                     type="text"
@@ -188,13 +180,13 @@ export default function MatchmakerModal({ isOpen, onClose }: MatchmakerModalProp
                                     onKeyDown={handleKeyDown}
                                     placeholder="Type a message..."
                                     disabled={loading}
-                                    className="flex-1 bg-gray-50 border border-gray-200 rounded-full px-5 py-3 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm"
+                                    className="flex-1 bg-cream border border-sand rounded-full px-5 py-3 focus:outline-none focus:border-rust transition-all text-sm font-medium"
                                     autoFocus
                                 />
                                 <button
                                     onClick={handleSend}
                                     disabled={!input.trim() || loading}
-                                    className="p-3 bg-primary text-white rounded-full hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
+                                    className="p-3 bg-charcoal text-white rounded-full hover:bg-rust disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
                                 >
                                     <Send size={18} />
                                 </button>

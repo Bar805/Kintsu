@@ -4,7 +4,7 @@ import { useState, useTransition, useRef } from 'react'
 import { Profile, VibeSliders as VibeSliderValues, PromptAnswer } from '@/types/database'
 import { updateProfile, updateAvatar } from '@/app/actions/profile'
 import { createClient } from '@/utils/supabase/client'
-import { User, Loader2, Save, ChevronLeft, ChevronRight, Sparkles, Camera, Zap, Tags, MessageCircle } from 'lucide-react'
+import { User, Loader2, Save, ChevronLeft, ChevronRight, Camera, Zap, Tags, MessageCircle, ArrowRight } from 'lucide-react'
 import { toast } from 'sonner'
 import Link from 'next/link'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -25,10 +25,10 @@ const DEFAULT_SLIDERS: VibeSliderValues = {
 }
 
 const STEPS = [
-    { key: 'basics', label: 'You', icon: User, color: 'blue' },
-    { key: 'vibe', label: 'Vibe', icon: Zap, color: 'amber' },
-    { key: 'identity', label: 'Identity', icon: Tags, color: 'violet' },
-    { key: 'story', label: 'Story', icon: MessageCircle, color: 'rose' },
+    { key: 'basics', label: 'You', icon: User },
+    { key: 'vibe', label: 'Vibe', icon: Zap },
+    { key: 'identity', label: 'Identity', icon: Tags },
+    { key: 'story', label: 'Story', icon: MessageCircle },
 ]
 
 export default function ProfilePage({ profile }: ProfileFormProps) {
@@ -59,25 +59,13 @@ export default function ProfilePage({ profile }: ProfileFormProps) {
             case 0:
                 return fullName.trim() && age && gender
             case 1:
-                return true // sliders always have defaults
+                return true
             case 2:
                 return identityChips.length > 0
             case 3:
                 return true
             default:
                 return false
-        }
-    }
-
-    const goNext = () => {
-        if (currentStep < STEPS.length - 1 && canGoNext()) {
-            setCurrentStep(currentStep + 1)
-        }
-    }
-
-    const goBack = () => {
-        if (currentStep > 0) {
-            setCurrentStep(currentStep - 1)
         }
     }
 
@@ -178,16 +166,16 @@ export default function ProfilePage({ profile }: ProfileFormProps) {
     }
 
     return (
-        <div className="h-screen w-full overflow-y-auto bg-gray-50/50">
-            <div className="max-w-2xl mx-auto px-4 py-6 pb-32 min-h-full flex flex-col">
+        <div className="h-screen w-full overflow-y-auto bg-cream">
+            <div className="max-w-2xl mx-auto px-6 py-6 pb-32 min-h-full flex flex-col">
 
                 {/* Top Bar */}
                 <div className="flex items-center justify-between mb-6">
                     <Link
                         href="/dashboard"
-                        className="inline-flex items-center gap-1.5 text-gray-400 hover:text-gray-700 transition-colors text-sm font-medium"
+                        className="inline-flex items-center gap-1.5 text-gray-400 hover:text-charcoal transition-colors text-sm font-bold"
                     >
-                        <ChevronLeft size={16} />
+                        <ArrowRight size={14} className="rotate-180" />
                         Back
                     </Link>
 
@@ -196,18 +184,18 @@ export default function ProfilePage({ profile }: ProfileFormProps) {
                         className="relative cursor-pointer group"
                         onClick={() => fileInputRef.current?.click()}
                     >
-                        <div className="p-0.5 rounded-full bg-gradient-to-br from-amber-300 to-orange-500">
-                            <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center overflow-hidden">
+                        <div className="p-0.5 rounded-full border-2 border-rust">
+                            <div className="w-10 h-10 bg-cream rounded-full flex items-center justify-center overflow-hidden">
                                 {isUploading ? (
-                                    <Loader2 size={16} className="animate-spin text-amber-500" />
+                                    <Loader2 size={16} className="animate-spin text-rust" />
                                 ) : profile.avatar_url ? (
                                     <img src={profile.avatar_url} alt="" className="w-full h-full object-cover" />
                                 ) : (
-                                    <User size={16} className="text-gray-300" />
+                                    <User size={16} className="text-gray-400" />
                                 )}
                             </div>
                         </div>
-                        <div className="absolute -bottom-0.5 -right-0.5 bg-white p-1 rounded-full shadow-sm text-gray-400 group-hover:text-amber-500 transition-colors">
+                        <div className="absolute -bottom-0.5 -right-0.5 bg-white p-1 rounded-full shadow-sm text-gray-400 group-hover:text-rust transition-colors border border-sand">
                             <Camera size={10} />
                         </div>
                         <input
@@ -237,13 +225,13 @@ export default function ProfilePage({ profile }: ProfileFormProps) {
                                     }
                                 }}
                                 className={`
-                                    flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider
+                                    flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-bold uppercase tracking-widest
                                     transition-all duration-300 cursor-pointer
                                     ${isActive
-                                        ? 'bg-gray-900 text-white shadow-lg shadow-gray-900/20'
+                                        ? 'bg-charcoal text-white shadow-lg'
                                         : isDone
-                                            ? 'bg-emerald-100 text-emerald-700'
-                                            : 'bg-gray-100 text-gray-400'
+                                            ? 'bg-rust/10 text-rust'
+                                            : 'bg-sand/50 text-gray-400'
                                     }
                                 `}
                             >
@@ -266,31 +254,31 @@ export default function ProfilePage({ profile }: ProfileFormProps) {
                             exit="exit"
                             transition={{ duration: 0.3, ease: 'easeInOut' }}
                         >
-                            <div className="bg-white rounded-3xl p-6 md:p-8 shadow-sm border border-gray-100/60">
+                            <div className="bg-white rounded-3xl p-6 md:p-8 shadow-sm border border-sand">
                                 {/* STEP 0: Basics */}
                                 {currentStep === 0 && (
                                     <div className="space-y-6">
                                         <div className="space-y-1">
-                                            <h2 className="text-xl font-bold text-gray-900">The Basics</h2>
+                                            <h2 className="text-xl font-bold text-charcoal">The Basics</h2>
                                             <p className="text-sm text-gray-400">Let&apos;s start simple.</p>
                                         </div>
 
                                         <div className="space-y-5">
                                             <div className="space-y-2">
-                                                <label className="text-xs font-semibold uppercase tracking-wider text-gray-500 ml-1">Full Name</label>
+                                                <label className="text-xs font-bold uppercase tracking-widest text-charcoal ml-1">Full Name</label>
                                                 <input
                                                     value={fullName}
                                                     onChange={(e) => setFullName(e.target.value)}
                                                     type="text"
                                                     required
-                                                    className="w-full p-4 bg-gray-50 border-0 rounded-2xl focus:bg-white focus:ring-2 focus:ring-amber-500/20 text-gray-900 font-medium transition-all outline-none"
+                                                    className="w-full p-4 bg-cream border border-sand rounded-2xl focus:bg-white focus:ring-2 focus:ring-rust/20 focus:border-rust text-charcoal font-medium transition-all outline-none"
                                                     placeholder="Your name"
                                                 />
                                             </div>
 
                                             <div className="grid grid-cols-2 gap-4">
                                                 <div className="space-y-2">
-                                                    <label className="text-xs font-semibold uppercase tracking-wider text-gray-500 ml-1">Age</label>
+                                                    <label className="text-xs font-bold uppercase tracking-widest text-charcoal ml-1">Age</label>
                                                     <input
                                                         value={age}
                                                         onChange={(e) => setAge(e.target.value)}
@@ -298,16 +286,16 @@ export default function ProfilePage({ profile }: ProfileFormProps) {
                                                         min="13"
                                                         max="120"
                                                         required
-                                                        className="w-full p-4 bg-gray-50 border-0 rounded-2xl focus:bg-white focus:ring-2 focus:ring-amber-500/20 text-gray-900 font-medium transition-all outline-none"
+                                                        className="w-full p-4 bg-cream border border-sand rounded-2xl focus:bg-white focus:ring-2 focus:ring-rust/20 focus:border-rust text-charcoal font-medium transition-all outline-none"
                                                         placeholder="25"
                                                     />
                                                 </div>
                                                 <div className="space-y-2">
-                                                    <label className="text-xs font-semibold uppercase tracking-wider text-gray-500 ml-1">Gender</label>
+                                                    <label className="text-xs font-bold uppercase tracking-widest text-charcoal ml-1">Gender</label>
                                                     <select
                                                         value={gender}
                                                         onChange={(e) => setGender(e.target.value)}
-                                                        className="w-full p-4 bg-gray-50 border-0 rounded-2xl focus:bg-white focus:ring-2 focus:ring-amber-500/20 text-gray-900 font-medium transition-all outline-none appearance-none cursor-pointer"
+                                                        className="w-full p-4 bg-cream border border-sand rounded-2xl focus:bg-white focus:ring-2 focus:ring-rust/20 focus:border-rust text-charcoal font-medium transition-all outline-none appearance-none cursor-pointer"
                                                     >
                                                         <option value="" disabled>Select</option>
                                                         <option value="Male">Male</option>
@@ -326,7 +314,7 @@ export default function ProfilePage({ profile }: ProfileFormProps) {
                                 {currentStep === 1 && (
                                     <div className="space-y-6">
                                         <div className="space-y-1">
-                                            <h2 className="text-xl font-bold text-gray-900">Your Vibe</h2>
+                                            <h2 className="text-xl font-bold text-charcoal">Your Vibe</h2>
                                             <p className="text-sm text-gray-400">Where do you fall on the spectrum?</p>
                                         </div>
                                         <VibeSliders value={sliders} onChange={setSliders} />
@@ -337,7 +325,7 @@ export default function ProfilePage({ profile }: ProfileFormProps) {
                                 {currentStep === 2 && (
                                     <div className="space-y-6">
                                         <div className="space-y-1">
-                                            <h2 className="text-xl font-bold text-gray-900">Your Identity</h2>
+                                            <h2 className="text-xl font-bold text-charcoal">Your Identity</h2>
                                             <p className="text-sm text-gray-400">Pick up to 5 that define you.</p>
                                         </div>
                                         <IdentityChipCloud value={identityChips} onChange={setIdentityChips} />
@@ -348,7 +336,7 @@ export default function ProfilePage({ profile }: ProfileFormProps) {
                                 {currentStep === 3 && (
                                     <div className="space-y-6">
                                         <div className="space-y-1">
-                                            <h2 className="text-xl font-bold text-gray-900">Your Story</h2>
+                                            <h2 className="text-xl font-bold text-charcoal">Your Story</h2>
                                             <p className="text-sm text-gray-400">Answer a prompt, get your AI bio.</p>
                                         </div>
                                         <PromptRoulette
@@ -367,18 +355,18 @@ export default function ProfilePage({ profile }: ProfileFormProps) {
                 </div>
 
                 {/* Bottom Navigation */}
-                <div className="fixed bottom-0 left-0 right-0 bg-white/80 backdrop-blur-xl border-t border-gray-100 p-4 z-50">
+                <div className="fixed bottom-0 left-0 right-0 bg-white/90 backdrop-blur-xl border-t border-sand p-4 z-50">
                     <div className="max-w-2xl mx-auto flex items-center justify-between">
                         <button
                             type="button"
                             onClick={handleBack}
                             disabled={currentStep === 0}
                             className={`
-                                flex items-center gap-2 px-5 py-3 rounded-full text-sm font-semibold
-                                transition-all duration-200
+                                flex items-center gap-2 px-5 py-3 rounded-full text-sm font-bold
+                                transition-all duration-200 border border-sand
                                 ${currentStep === 0
-                                    ? 'text-gray-300 cursor-not-allowed'
-                                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+                                    ? 'text-gray-300 cursor-not-allowed border-transparent'
+                                    : 'text-charcoal hover:text-rust hover:border-rust'
                                 }
                             `}
                         >
@@ -386,7 +374,7 @@ export default function ProfilePage({ profile }: ProfileFormProps) {
                             Back
                         </button>
 
-                        {/* Step dots (mobile) */}
+                        {/* Step dots */}
                         <div className="flex items-center gap-1.5">
                             {STEPS.map((_, index) => (
                                 <div
@@ -394,10 +382,10 @@ export default function ProfilePage({ profile }: ProfileFormProps) {
                                     className={`
                                         h-1.5 rounded-full transition-all duration-300
                                         ${index === currentStep
-                                            ? 'w-6 bg-gray-900'
+                                            ? 'w-6 bg-charcoal'
                                             : index < currentStep
-                                                ? 'w-1.5 bg-emerald-400'
-                                                : 'w-1.5 bg-gray-200'
+                                                ? 'w-1.5 bg-rust'
+                                                : 'w-1.5 bg-sand'
                                         }
                                     `}
                                 />
@@ -413,8 +401,8 @@ export default function ProfilePage({ profile }: ProfileFormProps) {
                                     flex items-center gap-2 px-6 py-3 rounded-full text-sm font-bold
                                     transition-all duration-200 shadow-lg
                                     ${!canGoNext()
-                                        ? 'bg-gray-200 text-gray-400 cursor-not-allowed shadow-none'
-                                        : 'bg-gray-900 text-white hover:bg-black active:scale-95'
+                                        ? 'bg-sand text-gray-400 cursor-not-allowed shadow-none'
+                                        : 'bg-charcoal text-white hover:bg-rust active:scale-95'
                                     }
                                 `}
                             >
@@ -426,7 +414,7 @@ export default function ProfilePage({ profile }: ProfileFormProps) {
                                 type="button"
                                 onClick={handleSave}
                                 disabled={isPending}
-                                className="flex items-center gap-2 px-6 py-3 rounded-full text-sm font-bold bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-lg shadow-amber-200/50 hover:shadow-xl active:scale-95 transition-all duration-200 disabled:opacity-70"
+                                className="flex items-center gap-2 px-6 py-3 rounded-full text-sm font-bold bg-charcoal text-white shadow-lg hover:bg-rust active:scale-95 transition-all duration-200 disabled:opacity-70"
                             >
                                 {isPending ? (
                                     <>

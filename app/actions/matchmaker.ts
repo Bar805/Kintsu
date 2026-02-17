@@ -63,12 +63,38 @@ export async function askMatchmaker(history: { role: 'user' | 'model', content: 
         Looking For: "${myProfile.looking_for}"
     ` : "Unknown"
 
-    // 2. Get Candidates (Everyone else)
-    const { data: candidates } = await supabase
+    // 2. Exclude users we already have conversations with
+    const { data: myParticipations } = await supabase
+        .from('participants')
+        .select('conversation_id')
+        .eq('user_id', user.id)
+
+    const myConvoIds = myParticipations?.map(p => p.conversation_id) || []
+
+    let existingPartnerIds: string[] = []
+    if (myConvoIds.length > 0) {
+        const { data: partners } = await supabase
+            .from('participants')
+            .select('user_id')
+            .in('conversation_id', myConvoIds)
+            .neq('user_id', user.id)
+
+        existingPartnerIds = [...new Set(partners?.map(p => p.user_id) || [])]
+    }
+
+    // 3. Get Candidates (exclude self + existing connections)
+    let query = supabase
         .from('profiles')
         .select('id, full_name, age, gender, bio, interests, looking_for')
         .neq('id', user.id)
         .limit(20)
+
+    if (existingPartnerIds.length > 0) {
+        // Filter out users we're already connected with
+        query = query.not('id', 'in', `(${existingPartnerIds.join(',')})`)
+    }
+
+    const { data: candidates } = await query
 
     const candidatesList = candidates?.map(c => `
         ID: ${c.id}

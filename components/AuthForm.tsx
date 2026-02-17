@@ -52,20 +52,25 @@ export default function AuthForm() {
     }
 
     return (
-        <motion.div layout className="w-full max-w-md bg-white rounded-2xl shadow-xl overflow-hidden border border-gray-100">
+        <motion.div layout className="w-full max-w-md bg-white rounded-3xl shadow-xl overflow-hidden border border-sand">
             <div className="p-8">
+                {/* Kintsu Logo */}
                 <div className="flex flex-col items-center mb-8">
-                    <h1 className="text-4xl font-extrabold bg-gradient-to-r from-amber-400 to-orange-500 bg-clip-text text-transparent mb-2">
-                        Trio
+                    <div className="flex items-center gap-1 mb-3">
+                        <div className="w-6 h-6 rounded-full bg-rust"></div>
+                        <div className="w-6 h-6 bg-teal"></div>
+                    </div>
+                    <h1 className="text-3xl font-bold text-charcoal tracking-tight">
+                        kintsu
                     </h1>
-                    <p className="text-gray-500 text-sm">The social connection app</p>
+                    <p className="text-gray-500 text-sm mt-1">Your social catalyst</p>
                 </div>
 
                 <form onSubmit={handleSubmit} className="space-y-4">
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                        <label className="block text-xs font-bold uppercase tracking-widest text-charcoal mb-2">Email</label>
                         <input
-                            className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-amber-400 focus:border-transparent outline-none transition-all"
+                            className="w-full p-3 bg-cream border border-sand rounded-2xl focus:ring-2 focus:ring-rust/20 focus:border-rust outline-none transition-all text-sm font-medium placeholder-gray-400"
                             placeholder="you@example.com"
                             type="email"
                             required
@@ -74,9 +79,9 @@ export default function AuthForm() {
                         />
                     </div>
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                        <label className="block text-xs font-bold uppercase tracking-widest text-charcoal mb-2">Password</label>
                         <input
-                            className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-amber-400 focus:border-transparent outline-none transition-all"
+                            className="w-full p-3 bg-cream border border-sand rounded-2xl focus:ring-2 focus:ring-rust/20 focus:border-rust outline-none transition-all text-sm font-medium placeholder-gray-400"
                             placeholder="••••••••"
                             type="password"
                             required
@@ -94,9 +99,9 @@ export default function AuthForm() {
                                 className="overflow-hidden"
                             >
                                 <div className="pt-0">
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Confirm Password</label>
+                                    <label className="block text-xs font-bold uppercase tracking-widest text-charcoal mb-2">Confirm Password</label>
                                     <input
-                                        className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-amber-400 focus:border-transparent outline-none transition-all"
+                                        className="w-full p-3 bg-cream border border-sand rounded-2xl focus:ring-2 focus:ring-rust/20 focus:border-rust outline-none transition-all text-sm font-medium placeholder-gray-400"
                                         placeholder="••••••••"
                                         type="password"
                                         required={isSignUp}
@@ -111,17 +116,17 @@ export default function AuthForm() {
                     <button
                         type="submit"
                         disabled={loading}
-                        className="w-full bg-gradient-to-r from-amber-400 to-orange-500 text-white font-bold py-3 rounded-xl shadow-md hover:shadow-lg transform hover:-translate-y-0.5 transition-all disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                        className="w-full bg-charcoal text-white font-bold py-3.5 rounded-full shadow-lg hover:bg-rust transition-colors disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                     >
                         {loading ? 'Processing...' : (isSignUp ? 'Create Account' : 'Sign In')}
-                        {!loading && <Sparkles size={18} className="text-white/80" />}
+                        {!loading && <Sparkles size={18} className="text-mustard" />}
                     </button>
                 </form>
 
                 <div className="mt-6 text-center">
                     <button
                         onClick={() => setIsSignUp(!isSignUp)}
-                        className="text-sm text-gray-500 hover:text-amber-600 transition-colors"
+                        className="text-sm text-gray-500 hover:text-rust transition-colors font-medium"
                     >
                         {isSignUp
                             ? "Already have an account? Sign In"

@@ -90,7 +90,7 @@ export default function IdentityChipCloud({ value, onChange, maxChips = 5 }: Ide
         <div className="space-y-5">
             {/* Selected Chips Summary */}
             <div className="flex items-center gap-2 min-h-[40px] flex-wrap">
-                <span className="text-xs font-semibold uppercase tracking-wider text-gray-400">
+                <span className="text-xs font-bold uppercase tracking-widest text-gray-400">
                     {value.length}/{maxChips} selected
                 </span>
                 <AnimatePresence>
@@ -103,7 +103,7 @@ export default function IdentityChipCloud({ value, onChange, maxChips = 5 }: Ide
                             exit={{ scale: 0, opacity: 0 }}
                             transition={{ type: 'spring', stiffness: 400, damping: 25 }}
                             onClick={() => toggleChip(chip)}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-gradient-to-r from-amber-500 to-orange-500 text-white text-sm font-bold shadow-md shadow-amber-200/50 hover:shadow-lg hover:shadow-amber-200/50 transition-shadow"
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-rust text-white text-sm font-bold shadow-sm hover:shadow-md transition-shadow"
                         >
                             {chip}
                             <X size={12} />
@@ -124,7 +124,7 @@ export default function IdentityChipCloud({ value, onChange, maxChips = 5 }: Ide
                         setCustomInput(e.target.value)
                     }}
                     onKeyDown={handleCustomKeyDown}
-                    className="w-full pl-10 pr-4 py-3 bg-gray-50 border-0 rounded-2xl text-sm font-medium text-gray-900 placeholder:text-gray-400 focus:bg-white focus:ring-2 focus:ring-amber-500/20 transition-all outline-none"
+                    className="w-full pl-10 pr-4 py-3 bg-cream border border-sand rounded-2xl text-sm font-medium text-charcoal placeholder:text-gray-400 focus:bg-white focus:ring-2 focus:ring-rust/20 focus:border-rust transition-all outline-none"
                 />
             </div>
 
@@ -143,13 +143,13 @@ export default function IdentityChipCloud({ value, onChange, maxChips = 5 }: Ide
                                 transition={{ delay: index * 0.02, duration: 0.2 }}
                                 onClick={() => toggleChip(chip)}
                                 className={`
-                  inline-flex items-center gap-1.5 px-4 py-2.5 rounded-full text-sm font-semibold
-                  transition-all duration-200 cursor-pointer select-none
-                  ${selected
-                                        ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-md shadow-amber-200/40 scale-105'
-                                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200 hover:text-gray-900 hover:scale-105'
+                                    inline-flex items-center gap-1.5 px-4 py-2.5 rounded-full text-sm font-semibold
+                                    transition-all duration-200 cursor-pointer select-none
+                                    ${selected
+                                        ? 'bg-rust text-white shadow-sm scale-105'
+                                        : 'bg-cream border border-sand text-charcoal hover:border-rust hover:text-rust hover:scale-105'
                                     }
-                `}
+                                `}
                             >
                                 {selected && <Check size={14} strokeWidth={3} />}
                                 {chip}
@@ -165,7 +165,7 @@ export default function IdentityChipCloud({ value, onChange, maxChips = 5 }: Ide
                         initial={{ opacity: 0, scale: 0.8 }}
                         animate={{ opacity: 1, scale: 1 }}
                         onClick={addCustomChip}
-                        className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-full text-sm font-semibold bg-gradient-to-r from-violet-500 to-purple-500 text-white shadow-md hover:shadow-lg transition-all cursor-pointer"
+                        className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-full text-sm font-semibold bg-teal text-white shadow-sm hover:shadow-md transition-all cursor-pointer"
                     >
                         <Plus size={14} strokeWidth={3} />
                         Add &quot;{customInput.trim()}&quot;

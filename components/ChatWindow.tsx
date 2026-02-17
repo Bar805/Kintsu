@@ -5,7 +5,7 @@ import { createBrowserClient } from '@supabase/ssr'
 import { Message, ConversationWithDetails } from '@/types/database'
 import { sendMessage } from '@/app/actions/chat'
 import { generateTrioResponse } from '@/app/actions/ai'
-import { ChevronLeft, Sparkles, User, Info, Phone, Video, ArrowLeft } from 'lucide-react'
+import { ArrowRight, Sparkles, User, Send } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import Link from 'next/link'
 import { toast } from 'sonner'
@@ -32,7 +32,6 @@ export default function ChatWindow({ conversation, initialMessages, currentUserI
         endRef.current?.scrollIntoView({ behavior: 'smooth' })
     }, [messages])
 
-    // Fix for Ghost Messages: Reset state when conversation changes
     useEffect(() => {
         setMessages(initialMessages)
         setNewMessage('')
@@ -57,10 +56,7 @@ export default function ChatWindow({ conversation, initialMessages, currentUserI
                     })
                 }
             )
-            .subscribe((status) => {
-                if (status === 'SUBSCRIBED') console.log('✅ Chat connected!')
-                if (status === 'CHANNEL_ERROR') console.error('❌ Chat connection failed')
-            })
+            .subscribe()
 
         return () => {
             supabase.removeChannel(channel)
@@ -102,192 +98,137 @@ export default function ChatWindow({ conversation, initialMessages, currentUserI
     const handleAiTrigger = async () => {
         if (isAiLoading) return
         setIsAiLoading(true)
-        toast.info('Trio is thinking...')
+        toast.info('Kintsu is thinking...')
         try {
             await generateTrioResponse(conversation.id)
-            toast.success('Trio responded!')
+            toast.success('Kintsu responded!')
         } catch (error) {
             console.error('AI generation failed', error)
-            toast.error('Trio failed to respond.')
+            toast.error('Kintsu failed to respond.')
         } finally {
             setIsAiLoading(false)
         }
     }
 
     return (
-        <div className="flex h-full flex-col bg-[#F8FAFC]">
+        <div className="flex h-full flex-col bg-cream">
             {/* Header */}
-            <div className="h-16 px-4 bg-white/80 backdrop-blur-md border-b border-gray-200 flex items-center justify-between sticky top-0 z-10">
-                <div className="flex items-center gap-3">
-                    <Link href="/dashboard" className="md:hidden p-2 -ml-2 text-gray-500 hover:bg-gray-100 rounded-full transition-colors active:bg-gray-200">
-                        <ChevronLeft size={26} />
-                    </Link>
+            <div className="bg-cream border-b border-sand px-6 py-4 z-10 sticky top-0">
+                <div className="flex justify-between items-center">
                     <div className="flex items-center gap-3">
-                        <div className="relative">
-                            <div className="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center text-gray-500 overflow-hidden border border-gray-100">
-                                {conversation.partner_avatar ? (
-                                    <img src={conversation.partner_avatar} alt={conversation.partner_name} className="w-full h-full object-cover" />
-                                ) : (
-                                    <User size={20} />
-                                )}
-                            </div>
-                            <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></div>
+                        <Link href="/dashboard" className="mr-1">
+                            <ArrowRight className="w-4 h-4 rotate-180 text-gray-400" />
+                        </Link>
+                        <div className="w-10 h-10 rounded-full overflow-hidden border-2 border-rust p-0.5">
+                            {conversation.partner_avatar ? (
+                                <img
+                                    src={conversation.partner_avatar}
+                                    className="w-full h-full object-cover rounded-full"
+                                    alt={conversation.partner_name}
+                                />
+                            ) : (
+                                <div className="w-full h-full rounded-full bg-rust flex items-center justify-center text-white font-bold text-sm">
+                                    {conversation.partner_name?.[0] || '?'}
+                                </div>
+                            )}
                         </div>
-                        <div className="flex flex-col">
-                            <h2 className="text-sm font-semibold text-gray-900 leading-tight">
-                                {conversation.partner_name || 'Unknown'}
-                            </h2>
-                            <span className="text-xs text-gray-400 font-medium">Trio Secure Chat</span>
+                        <div className="leading-tight">
+                            <h1 className="text-lg font-bold text-charcoal">{conversation.partner_name || 'Unknown'}</h1>
+                            <p className="text-[10px] font-bold uppercase tracking-widest text-teal">Online</p>
                         </div>
                     </div>
-                </div>
-
-                <div className="flex items-center gap-4 text-blue-500">
                     <button
                         onClick={handleAiTrigger}
                         disabled={isAiLoading}
-                        className={`p-2 rounded-full transition-all ${isAiLoading ? 'bg-blue-100' : 'hover:bg-blue-50'}`}
-                        title="Ask Trio"
+                        className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${isAiLoading ? 'bg-mustard/30' : 'bg-mustard hover:scale-105'}`}
+                        title="Ask Kintsu"
                     >
-                        <Sparkles size={22} className={isAiLoading ? "animate-spin text-blue-600" : ""} />
+                        <Sparkles className={`w-5 h-5 text-charcoal ${isAiLoading ? 'animate-spin' : ''}`} />
                     </button>
-                    <button className="hover:bg-blue-50 p-2 rounded-full transition-colors"><Video size={22} /></button>
-                    <button className="hover:bg-blue-50 p-2 rounded-full transition-colors"><Info size={22} /></button>
                 </div>
             </div>
 
-            {/* Chat Area */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-6">
-                <div className="text-center py-6">
-                    <span className="text-xs font-medium text-gray-400 bg-gray-100 px-3 py-1 rounded-full">
-                        Today {new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
-                    </span>
-                </div>
+            {/* Messages */}
+            <div className="flex-1 overflow-y-auto px-4 py-6 scroll-smooth">
+                <div className="space-y-8">
+                    <AnimatePresence initial={false}>
+                        {messages.map((msg, index) => {
+                            const trioId = process.env.NEXT_PUBLIC_TRIO_USER_ID
+                            const isTrio = msg.sender_id === trioId
+                            const isMe = msg.sender_id === currentUserId
+                            const isAi = msg.is_ai_generated
 
-                <AnimatePresence initial={false}>
-                    {messages.map((msg, index) => {
-                        const trioId = process.env.NEXT_PUBLIC_TRIO_USER_ID
-                        const isTrio = msg.sender_id === trioId
-                        const isMe = msg.sender_id === currentUserId
-                        const isAi = msg.is_ai_generated
+                            const alignRight = isMe && !isAi && !isTrio
 
-                        // Alignment: AI (old) or Trio are Left. Me is Right.
-                        const alignRight = isMe && !isAi && !isTrio
-
-                        const showAvatar = !alignRight && (index === 0 || messages[index - 1].sender_id !== msg.sender_id || messages[index - 1].is_ai_generated !== isAi)
-
-                        return (
-                            <motion.div
-                                key={msg.id}
-                                initial={{ opacity: 0, scale: 0.95, y: 10 }}
-                                animate={{ opacity: 1, scale: 1, y: 0 }}
-                                transition={{ duration: 0.2 }}
-                                className={`flex w-full ${alignRight ? 'justify-end' : 'justify-start'}`}
-                            >
-                                <div className={`flex max-w-[75%] ${alignRight ? 'flex-row-reverse' : 'flex-row'} items-end gap-2`}>
-
-                                    {/* Avatar for partner/AI */}
-                                    {!alignRight && (
-                                        <div className="w-8 h-8 shrink-0 pb-1">
-                                            {showAvatar && (
-                                                <div className={`
-                                                    w-8 h-8 rounded-full flex items-center justify-center overflow-hidden text-xs shadow-sm
-                                                    ${isTrio
-                                                        ? 'bg-yellow-100 text-yellow-600'
-                                                        : isAi
-                                                            ? 'bg-amber-100 text-ai'
-                                                            : 'bg-gray-200 text-gray-500'
-                                                    }
-                                                `}>
-                                                    {isTrio || isAi ? <Sparkles size={14} /> : (
-                                                        conversation.partner_avatar ? <img src={conversation.partner_avatar} alt="" className="w-full h-full object-cover" /> : conversation.partner_name?.[0]
-                                                    )}
-                                                </div>
-                                            )}
-                                        </div>
-                                    )}
-
-                                    <div className="flex flex-col gap-1">
-                                        {/* Name for AI */}
-                                        {(isAi || isTrio) && (
-                                            <span className={`
-                                                text-[10px] font-bold uppercase tracking-wider ml-3 mb-0.5 flex items-center gap-1
-                                                ${isTrio ? 'text-yellow-600' : 'text-ai'}
-                                            `}>
-                                                {isTrio ? 'Trio' : 'Trio Suggestion'}
-                                            </span>
-                                        )}
-
-                                        <div
-                                            className={`
-                                                px-4 py-2.5 shadow-sm text-[15px] leading-relaxed relative
-                                                ${isTrio
-                                                    ? 'bg-yellow-50 text-gray-800 border border-yellow-200 shadow-sm rounded-2xl rounded-tl-sm'
-                                                    : isAi
-                                                        ? 'bg-amber-50/90 text-gray-900 border border-amber-200/80 rounded-2xl rounded-tl-sm'
-                                                        : isMe
-                                                            ? 'bg-primary text-white rounded-2xl rounded-tr-sm'
-                                                            : 'bg-white text-gray-900 border border-gray-200/50 rounded-2xl rounded-tl-sm'
-                                                }
-                                            `}
-                                        >
-                                            {msg.content}
-                                        </div>
-
-                                        {/* Status / Time */}
-                                        {alignRight && (
-                                            <div className="text-[10px] text-gray-300 text-right pr-1">
-                                                Sent
+                            // AI / Kintsu message — centered card
+                            if (isTrio || isAi) {
+                                return (
+                                    <motion.div
+                                        key={msg.id}
+                                        initial={{ opacity: 0, y: 10 }}
+                                        animate={{ opacity: 1, y: 0 }}
+                                        className="flex flex-col w-full items-center animate-fade-in relative"
+                                    >
+                                        <div className="bg-mustard/20 border border-mustard/50 p-6 rounded-3xl text-center max-w-[95%] relative">
+                                            <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-mustard text-charcoal text-[9px] font-bold uppercase tracking-widest px-2 py-1 rounded-full">
+                                                Kintsu Host
                                             </div>
-                                        )}
+                                            <p className="text-charcoal text-sm font-medium leading-relaxed whitespace-pre-wrap">
+                                                {msg.content}
+                                            </p>
+                                        </div>
+                                    </motion.div>
+                                )
+                            }
+
+                            // User or Partner message
+                            return (
+                                <motion.div
+                                    key={msg.id}
+                                    initial={{ opacity: 0, scale: 0.95 }}
+                                    animate={{ opacity: 1, scale: 1 }}
+                                    className={`flex flex-col ${alignRight ? 'items-end' : 'items-start'} animate-scale-in`}
+                                >
+                                    <div
+                                        className={`p-4 max-w-[85%] text-sm font-medium leading-relaxed shadow-sm ${alignRight
+                                            ? 'bg-rust text-white rounded-t-2xl rounded-bl-2xl'
+                                            : 'bg-white text-charcoal border border-sand rounded-t-2xl rounded-br-2xl'
+                                            }`}
+                                    >
+                                        {msg.content}
                                     </div>
-                                </div>
-                            </motion.div>
-                        )
-                    })}
-                </AnimatePresence>
-                <div ref={endRef} className="h-4" />
+                                    <span className="text-[10px] font-bold uppercase mt-1 text-gray-400 mx-1">
+                                        {new Date(msg.created_at).toLocaleTimeString([], {
+                                            hour: '2-digit',
+                                            minute: '2-digit',
+                                        })}
+                                    </span>
+                                </motion.div>
+                            )
+                        })}
+                    </AnimatePresence>
+                    <div ref={endRef} />
+                </div>
             </div>
 
             {/* Input Area */}
-            <div className="p-4 bg-white/80 backdrop-blur-xl border-t border-gray-200 sticky bottom-0 z-20">
-                <form
-                    onSubmit={handleSend}
-                    className="flex items-center gap-3 max-w-4xl mx-auto w-full"
-                >
-                    <button type="button" className="text-gray-400 hover:text-gray-600 transition-colors p-1">
-                        <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center">
-                            <span className="text-lg font-light leading-none pb-1">+</span>
-                        </div>
-                    </button>
-
-                    <div className="flex-1 relative">
-                        <input
-                            type="text"
-                            value={newMessage}
-                            onChange={(e) => setNewMessage(e.target.value)}
-                            placeholder="Trio Secure Chat"
-                            className="
-                                w-full h-10 bg-gray-100 border border-transparent 
-                                rounded-full pl-4 pr-10 
-                                focus:outline-none focus:bg-white focus:border-gray-300 focus:ring-2 focus:ring-primary/10 
-                                transition-all text-base text-gray-800 placeholder-gray-400
-                            "
-                        />
-                        <AnimatePresence>
-                            {newMessage.trim() && (
-                                <motion.button
-                                    initial={{ scale: 0, opacity: 0 }}
-                                    animate={{ scale: 1, opacity: 1 }}
-                                    exit={{ scale: 0, opacity: 0 }}
-                                    type="submit"
-                                    className="absolute right-1 top-1 w-8 h-8 bg-primary rounded-full flex items-center justify-center text-white hover:bg-blue-800 transition-colors shadow-sm"
-                                >
-                                    <ArrowLeft size={16} className="rotate-90" />
-                                </motion.button>
-                            )}
-                        </AnimatePresence>
-                    </div>
+            <div className="p-4 bg-cream border-t border-sand sticky bottom-0 z-20">
+                <form onSubmit={handleSend} className="flex items-center gap-2">
+                    <input
+                        type="text"
+                        value={newMessage}
+                        onChange={(e) => setNewMessage(e.target.value)}
+                        placeholder="Type a message..."
+                        className="flex-1 bg-white border border-sand h-12 px-5 rounded-full text-sm font-medium placeholder-gray-400 focus:outline-none focus:border-rust transition-colors"
+                    />
+                    {newMessage.trim() && (
+                        <button
+                            type="submit"
+                            className="w-12 h-12 bg-charcoal text-white rounded-full flex items-center justify-center hover:scale-105 transition-transform"
+                        >
+                            <Send className="w-5 h-5" />
+                        </button>
+                    )}
                 </form>
             </div>
         </div>
