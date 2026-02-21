@@ -14,9 +14,10 @@ type Props = {
 
 const AVATAR_COLORS = ['#D95D39', '#2B6B6E', '#F0C419', '#2D2D2D']
 
+const supabase = createClient()
+
 export default function ConversationList({ initialConversations, currentUserId }: Props) {
     const router = useRouter()
-    const supabase = createClient()
 
     useEffect(() => {
         const channel = supabase
@@ -39,7 +40,7 @@ export default function ConversationList({ initialConversations, currentUserId }
         return () => {
             supabase.removeChannel(channel)
         }
-    }, [supabase, router, currentUserId])
+    }, [router, currentUserId])
 
     const handleLogout = async () => {
         await supabase.auth.signOut()
@@ -78,6 +79,7 @@ export default function ConversationList({ initialConversations, currentUserId }
                                     className="w-12 h-12 rounded-full flex items-center justify-center text-white font-bold text-lg shrink-0"
                                     style={{ backgroundColor: avatarColor }}
                                 >
+                                    {/* {conversation.partner_name} */}
                                     {chat.partner_avatar ? (
                                         <img src={chat.partner_avatar} alt={chat.partner_name} className="w-full h-full rounded-full object-cover" />
                                     ) : (

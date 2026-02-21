@@ -95,7 +95,7 @@ function getAdminClient() {
 
 async function callGemini(systemPrompt: string, history: { role: string; content: string }[]): Promise<string> {
     const apiKey = process.env.GOOGLE_API_KEY
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`
 
     const contents = [
         { role: 'user', parts: [{ text: systemPrompt }] },
@@ -131,8 +131,15 @@ async function callGemini(systemPrompt: string, history: { role: string; content
             throw new Error(`API Error: ${response.status}`)
         }
 
-        const data = await response.json()
-        const text = data.candidates?.[0]?.content?.parts?.[0]?.text
+        const text = await response.text()
+        let data
+        try {
+            data = JSON.parse(text)
+        } catch (e) {
+            console.error('[matchmaker] Valid JSON check failed. Raw response:', text)
+            throw new Error(`Gemini response not valid JSON: ${e instanceof Error ? e.message : String(e)}`)
+        }
+        const textResponse = data.candidates?.[0]?.content?.parts?.[0]?.text
         if (!text) throw new Error('No response from AI')
         return text
     }

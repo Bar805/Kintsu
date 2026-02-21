@@ -46,29 +46,34 @@ export async function getConversations(): Promise<ConversationWithDetails[]> {
         return []
     }
 
-    // 3. For each conversation, find the partner details
-    const conversationsWithDetails: ConversationWithDetails[] = []
+    // 3. Collect all partner user IDs and batch-fetch profiles
+    const partnerIds = conversations
+        .map(conv => conv.participants.find((p: Participant) => p.user_id !== user.id)?.user_id)
+        .filter((id): id is string => !!id)
 
-    for (const conv of conversations) {
-        const partner = conv.participants.find((p: Participant) => p.user_id !== user.id)
+    const profileMap = new Map<string, { full_name: string; avatar_url: string }>()
 
-        let partnerName = 'Unknown'
-        let partnerAvatar = ''
+    if (partnerIds.length > 0) {
+        const { data: profiles } = await supabase
+            .from('profiles')
+            .select('id, full_name, avatar_url')
+            .in('id', partnerIds)
 
-        if (partner) {
-            const { data: profile } = await supabase
-                .from('profiles')
-                .select('full_name, avatar_url')
-                .eq('id', partner.user_id)
-                .single()
-
-            if (profile) {
-                partnerName = profile.full_name || 'Unknown'
-                partnerAvatar = profile.avatar_url || ''
+        if (profiles) {
+            for (const profile of profiles) {
+                profileMap.set(profile.id, {
+                    full_name: profile.full_name || 'Unknown',
+                    avatar_url: profile.avatar_url || '',
+                })
             }
         }
+    }
 
-        conversationsWithDetails.push({
+    const conversationsWithDetails: ConversationWithDetails[] = conversations.map(conv => {
+        const partner = conv.participants.find((p: Participant) => p.user_id !== user.id)
+        const profile = partner ? profileMap.get(partner.user_id) : undefined
+
+        return {
             id: conv.id,
             created_at: conv.created_at,
             is_active: conv.is_active,
@@ -77,16 +82,29 @@ export async function getConversations(): Promise<ConversationWithDetails[]> {
             interested_user_ids: conv.interested_user_ids || [],
             meetup_suggested: conv.meetup_suggested || false,
             meetup_trigger_after: conv.meetup_trigger_after || null,
-            partner_name: partnerName,
-            partner_avatar: partnerAvatar,
-        })
-    }
+            partner_name: profile?.full_name || 'Unknown',
+            partner_avatar: profile?.avatar_url || '',
+        }
+    })
 
     return conversationsWithDetails
 }
 
 export async function getMessages(conversationId: string): Promise<Message[]> {
     const supabase = await createClient()
+
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return []
+
+    // Verify the user is a participant in this conversation
+    const { data: membership } = await supabase
+        .from('participants')
+        .select('user_id')
+        .eq('conversation_id', conversationId)
+        .eq('user_id', user.id)
+        .single()
+
+    if (!membership) return []
 
     const { data, error } = await supabase
         .from('messages')
@@ -107,6 +125,16 @@ export async function sendMessage(conversationId: string, content: string, id?: 
     const { data: { user } } = await supabase.auth.getUser()
 
     if (!user) return false
+
+    // Verify the user is a participant in this conversation
+    const { data: membership } = await supabase
+        .from('participants')
+        .select('user_id')
+        .eq('conversation_id', conversationId)
+        .eq('user_id', user.id)
+        .single()
+
+    if (!membership) return false
 
     const adminClient = createSupabaseClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -160,10 +188,19 @@ export async function sendMessage(conversationId: string, content: string, id?: 
                     .eq('conversation_id', conversationId)
 
                 if (count && count >= conv.meetup_trigger_after) {
-                    // Fire meetup suggestion in background
-                    generateMeetupSuggestion(conversationId).catch(err =>
-                        console.error('Meetup suggestion error:', err)
-                    )
+                    // Atomic claim: only the update that flips meetup_suggested false→true fires the suggestion
+                    const { data: claimed } = await adminClient
+                        .from('conversations')
+                        .update({ meetup_suggested: true })
+                        .eq('id', conversationId)
+                        .eq('meetup_suggested', false)
+                        .select('id')
+
+                    if (claimed && claimed.length > 0) {
+                        generateMeetupSuggestion(conversationId).catch(err =>
+                            console.error('Meetup suggestion error:', err)
+                        )
+                    }
                 }
             }
         }

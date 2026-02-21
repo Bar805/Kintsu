@@ -7,6 +7,11 @@ import { getActiveMatchRequest, type MatchRequest } from '@/app/actions/matchmak
 import { createBrowserClient } from '@supabase/ssr'
 import { motion } from 'framer-motion'
 
+const supabase = createBrowserClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+)
+
 export default function MatchmakerTrigger() {
     const [isOpen, setIsOpen] = useState(false)
     const [activeRequest, setActiveRequest] = useState<MatchRequest | null>(null)
@@ -29,11 +34,6 @@ export default function MatchmakerTrigger() {
 
     // Listen for realtime updates to match_requests
     useEffect(() => {
-        const supabase = createBrowserClient(
-            process.env.NEXT_PUBLIC_SUPABASE_URL!,
-            process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-        )
-
         const channel = supabase
             .channel('match-request-updates')
             .on(

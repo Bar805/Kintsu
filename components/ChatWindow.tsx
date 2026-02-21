@@ -4,11 +4,16 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { createBrowserClient } from '@supabase/ssr'
 import { Message, ConversationWithDetails } from '@/types/database'
 import { sendMessage } from '@/app/actions/chat'
-import { generateSuggestions, markInterested, getConversationMeta } from '@/app/actions/chat-suggestions'
+import { markInterested, getConversationMeta } from '@/app/actions/chat-suggestions'
 import { ArrowRight, Sparkles, Send, Clock, Coffee, ExternalLink } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import Link from 'next/link'
 import { toast } from 'sonner'
+
+const supabase = createBrowserClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+)
 
 interface ChatWindowProps {
     conversation: ConversationWithDetails
@@ -60,11 +65,6 @@ export default function ChatWindow({ conversation, initialMessages, currentUserI
     const [timerExpiry, setTimerExpiry] = useState<string | null>(conversation.timer_expires_at)
     const [countdown, setCountdown] = useState('24:00:00')
     const endRef = useRef<HTMLDivElement>(null)
-
-    const supabase = createBrowserClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    )
 
     // ─── Scroll to bottom ────────────────────────────────────────────────────
 
@@ -125,7 +125,7 @@ export default function ChatWindow({ conversation, initialMessages, currentUserI
         return () => {
             supabase.removeChannel(channel)
         }
-    }, [conversation.id, supabase])
+    }, [conversation.id])
 
     // ─── Poll conversation meta when messages change (timer, interest) ────────
 
@@ -139,26 +139,40 @@ export default function ChatWindow({ conversation, initialMessages, currentUserI
         refreshMeta()
     }, [conversation.id, messages.length])
 
-    // ─── Load AI suggestions when messages change ────────────────────────────
+    // ─── Fetch suggestions from API (icebreaker or on-demand reply) ──────────
 
-    const loadSuggestions = useCallback(async () => {
-        if (messages.length < 1) return
+    const fetchSuggestions = useCallback(async () => {
         setIsLoadingSuggestions(true)
+        setSuggestions([])
         try {
-            const results = await generateSuggestions(conversation.id)
-            setSuggestions(results)
-        } catch {
-            setSuggestions([])
+            const res = await fetch(`/api/suggestions?conversationId=${conversation.id}`)
+            if (!res.ok) {
+                const body = await res.json().catch(() => ({}))
+                if (res.status === 429) {
+                    toast('Suggestions are busy right now. Try again in a moment.', { duration: 3000 })
+                } else {
+                    console.error('[suggestions] API error:', res.status, body.detail || body.error)
+                }
+                return
+            }
+            const data = await res.json()
+            setSuggestions(data.suggestions || [])
+        } catch (err) {
+            console.error('[suggestions] Fetch failed:', err)
         } finally {
             setIsLoadingSuggestions(false)
         }
-    }, [conversation.id, messages.length])
+    }, [conversation.id])
+
+    // ─── Auto-load icebreakers when a new conversation has no messages ────────
 
     useEffect(() => {
-        // Load suggestions after messages update, with a small debounce
-        const timeout = setTimeout(loadSuggestions, 1000)
-        return () => clearTimeout(timeout)
-    }, [messages.length])
+        if (messages.length === 0) {
+            fetchSuggestions()
+        } else {
+            setSuggestions([])
+        }
+    }, [conversation.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
     // ─── Send message ────────────────────────────────────────────────────────
 
@@ -374,10 +388,31 @@ export default function ChatWindow({ conversation, initialMessages, currentUserI
                     </button>
                 </div>
 
-                {/* Suggested Replies */}
+                {/* Suggested Replies / Icebreakers */}
                 <AnimatePresence>
-                    {suggestions.length > 0 && (
+                    {isLoadingSuggestions && (
                         <motion.div
+                            key="shimmer"
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: 10 }}
+                            className="flex flex-col space-y-3 mb-4"
+                        >
+                            <div className="flex items-center space-x-2">
+                                <Sparkles className="w-4 h-4 text-mustard fill-mustard animate-pulse" />
+                                <span className="text-xs font-bold text-charcoal/40 uppercase tracking-widest">
+                                    Thinking...
+                                </span>
+                            </div>
+                            <div className="flex flex-col gap-2">
+                                <div className="h-11 rounded-xl bg-sand/60 animate-pulse" />
+                                <div className="h-11 rounded-xl bg-sand/60 animate-pulse" />
+                            </div>
+                        </motion.div>
+                    )}
+                    {!isLoadingSuggestions && suggestions.length > 0 && (
+                        <motion.div
+                            key="suggestions"
                             initial={{ opacity: 0, y: 10 }}
                             animate={{ opacity: 1, y: 0 }}
                             exit={{ opacity: 0, y: 10 }}
@@ -386,7 +421,7 @@ export default function ChatWindow({ conversation, initialMessages, currentUserI
                             <div className="flex items-center space-x-2">
                                 <Sparkles className="w-4 h-4 text-mustard fill-mustard" />
                                 <span className="text-xs font-bold text-charcoal uppercase tracking-widest">
-                                    Suggested Replies
+                                    {messages.length === 0 ? 'Icebreakers' : 'Suggested Replies'}
                                 </span>
                             </div>
                             <div className="flex flex-col gap-2">
@@ -407,6 +442,17 @@ export default function ChatWindow({ conversation, initialMessages, currentUserI
 
                 {/* Input */}
                 <form onSubmit={handleSend} className="flex items-center gap-2">
+                    {messages.length > 0 && (
+                        <button
+                            type="button"
+                            onClick={fetchSuggestions}
+                            disabled={isLoadingSuggestions}
+                            title="Get AI suggestions"
+                            className="w-12 h-12 bg-white border border-sand rounded-full flex items-center justify-center hover:border-mustard transition-colors disabled:opacity-50 shrink-0"
+                        >
+                            <Sparkles className={`w-5 h-5 ${isLoadingSuggestions ? 'animate-pulse text-mustard' : 'text-gray-400'}`} />
+                        </button>
+                    )}
                     <input
                         type="text"
                         value={newMessage}

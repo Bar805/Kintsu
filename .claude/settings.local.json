@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node test-google.js)",
+      "Bash(npm install:*)",
+      "Bash(npx vitest:*)"
+    ]
+  }
+}

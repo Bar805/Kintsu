@@ -7,6 +7,11 @@ import { getPendingMatchForUser } from '@/app/actions/matchmaker'
 import { createBrowserClient } from '@supabase/ssr'
 import MatchCard from './MatchCard'
 
+const supabase = createBrowserClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+)
+
 export default function MatchNotification() {
     const [pendingMatch, setPendingMatch] = useState<any>(null)
     const [showCard, setShowCard] = useState(false)
@@ -26,11 +31,6 @@ export default function MatchNotification() {
 
     // Listen for realtime updates
     useEffect(() => {
-        const supabase = createBrowserClient(
-            process.env.NEXT_PUBLIC_SUPABASE_URL!,
-            process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-        )
-
         const channel = supabase
             .channel('match-notification')
             .on(

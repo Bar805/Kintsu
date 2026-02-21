@@ -28,7 +28,7 @@ async function callGemini(systemPrompt: string, userPrompt: string): Promise<str
     // Retry with backoff for rate limits
     for (let attempt = 0; attempt < 3; attempt++) {
         const res = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
+            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
             {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -43,7 +43,14 @@ async function callGemini(systemPrompt: string, userPrompt: string): Promise<str
             continue
         }
 
-        const data = await res.json()
+        const text = await res.text()
+        let data
+        try {
+            data = JSON.parse(text)
+        } catch (e) {
+            console.error('[chat-suggestions] Valid JSON check failed. Raw response:', text)
+            throw new Error(`Gemini response not valid JSON: ${e instanceof Error ? e.message : String(e)}`)
+        }
         const raw = data?.candidates?.[0]?.content?.parts?.[0]?.text || ''
         // Strip markdown fencing if present
         return raw.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
@@ -52,59 +59,7 @@ async function callGemini(systemPrompt: string, userPrompt: string): Promise<str
     throw new Error('Gemini API rate limited after 3 retries')
 }
 
-// ─── 1. Generate Reply Suggestions ──────────────────────────────────────────
-
-const SUGGESTIONS_PROMPT = `
-You are Kintsu, a social AI that helps people connect.
-Given the recent chat messages between two people, generate exactly 2 short reply suggestions for the current user.
-
-Rules:
-- Each suggestion should be 5-15 words
-- Match the tone and topic of the conversation
-- One can be playful/fun, the other more genuine/sincere
-- Don't repeat what was already said
-- Output JSON only, no markdown:
-{"suggestions": ["suggestion 1", "suggestion 2"]}
-`
-
-export async function generateSuggestions(
-    conversationId: string
-): Promise<string[]> {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return []
-
-    // Fetch recent messages (last 10)
-    const { data: messages } = await supabase
-        .from('messages')
-        .select('sender_id, content, is_ai_generated')
-        .eq('conversation_id', conversationId)
-        .order('created_at', { ascending: false })
-        .limit(10)
-
-    if (!messages || messages.length === 0) return []
-
-    const trioId = process.env.NEXT_PUBLIC_TRIO_USER_ID
-    const chatLog = messages
-        .reverse()
-        .map(m => {
-            if (m.sender_id === trioId || m.is_ai_generated) return `[Kintsu]: ${m.content}`
-            if (m.sender_id === user.id) return `[You]: ${m.content}`
-            return `[Partner]: ${m.content}`
-        })
-        .join('\n')
-
-    try {
-        const raw = await callGemini(SUGGESTIONS_PROMPT, `Recent chat:\n${chatLog}`)
-        const parsed = JSON.parse(raw)
-        return parsed.suggestions?.slice(0, 2) || []
-    } catch (err) {
-        console.error('Failed to generate suggestions:', err)
-        return []
-    }
-}
-
-// ─── 2. Generate Meetup Suggestion ──────────────────────────────────────────
+// ─── 1. Generate Meetup Suggestion ──────────────────────────────────────────
 
 const MEETUP_PROMPT = `
 You are Kintsu, a social AI connecting people.

@@ -56,7 +56,14 @@ export async function evaluateConversationState(conversationId: string, profiles
 
         if (!response.ok) return false
 
-        const data = await response.json()
+        const textRaw = await response.text()
+        let data
+        try {
+            data = JSON.parse(textRaw)
+        } catch (e) {
+            console.error("[ai] Valid JSON check failed. Raw response:", textRaw)
+            return false
+        }
         const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "{}"
         const result = JSON.parse(text)
 
@@ -156,7 +163,14 @@ export async function generateTrioResponse(conversationId: string, profiles?: Us
 
         if (!response.ok) throw new Error(`API Error: ${response.status}`)
 
-        const data = await response.json()
+        const textRaw = await response.text()
+        let data
+        try {
+            data = JSON.parse(textRaw)
+        } catch (e) {
+            console.error('[ai] Valid JSON check failed. Raw response:', textRaw)
+            throw new Error(`API Error: Invalid JSON`)
+        }
         const responseText = data.candidates?.[0]?.content?.parts?.[0]?.text || ""
 
         // 4. Save Response using ADMIN CLIENT (Bypass RLS)

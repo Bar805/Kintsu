@@ -110,7 +110,7 @@ export async function generateIdentitySummary(
             return { summary: null, error: 'API key not configured' }
         }
 
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key=${apiKey}`
 
         const prompt = `
 You are writing a short, punchy, third-person bio for a social app profile.
