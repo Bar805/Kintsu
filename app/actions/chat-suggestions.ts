@@ -118,7 +118,7 @@ export async function generateMeetupSuggestion(
     const userIds = participants.map(p => p.user_id)
     const { data: profiles } = await supabase
         .from('profiles')
-        .select('id, full_name, interests, bio')
+        .select('id, first_name, interests, bio')
         .in('id', userIds)
 
     const trioId = process.env.NEXT_PUBLIC_TRIO_USER_ID
@@ -127,12 +127,12 @@ export async function generateMeetupSuggestion(
         .map(m => {
             if (m.sender_id === trioId || m.is_ai_generated) return `[Kintsu]: ${m.content}`
             const profile = profiles?.find(p => p.id === m.sender_id)
-            return `[${profile?.full_name || 'User'}]: ${m.content}`
+            return `[${profile?.first_name || 'User'}]: ${m.content}`
         })
         .join('\n')
 
     const profileInfo = profiles?.map(p =>
-        `${p.full_name}: interests=${(p.interests || []).join(', ')}, bio=${p.bio || 'N/A'}`
+        `${p.first_name}: interests=${(p.interests || []).join(', ')}, bio=${p.bio || 'N/A'}`
     ).join('\n') || ''
 
     try {

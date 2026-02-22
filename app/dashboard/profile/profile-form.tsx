@@ -4,9 +4,10 @@ import { useState, useTransition, useRef } from 'react'
 import { Profile, VibeSliders as VibeSliderValues, PromptAnswer } from '@/types/database'
 import { updateProfile, updateAvatar } from '@/app/actions/profile'
 import { createClient } from '@/utils/supabase/client'
-import { User, Loader2, Save, ChevronLeft, ChevronRight, Camera, Zap, Tags, MessageCircle, ArrowRight } from 'lucide-react'
+import { User, Loader2, Save, ChevronLeft, ChevronRight, Camera, Zap, Tags, MessageCircle, X } from 'lucide-react'
 import { toast } from 'sonner'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import VibeSliders from '@/components/VibeSliders'
 import IdentityChipCloud from '@/components/IdentityChipCloud'
@@ -14,6 +15,7 @@ import PromptRoulette from '@/components/PromptRoulette'
 
 interface ProfileFormProps {
     profile: Profile
+    requireSetup?: boolean
 }
 
 const DEFAULT_SLIDERS: VibeSliderValues = {
@@ -31,14 +33,19 @@ const STEPS = [
     { key: 'story', label: 'Story', icon: MessageCircle },
 ]
 
-export default function ProfilePage({ profile }: ProfileFormProps) {
+export default function ProfilePage({ profile, requireSetup }: ProfileFormProps) {
+    const router = useRouter()
     const [isPending, startTransition] = useTransition()
     const [isUploading, setIsUploading] = useState(false)
     const fileInputRef = useRef<HTMLInputElement>(null)
     const [currentStep, setCurrentStep] = useState(0)
 
     // Form State
-    const [fullName, setFullName] = useState(profile.full_name || '')
+    const initialFirstName = profile.first_name || (profile.full_name ? profile.full_name.split(' ')[0] : '')
+    const initialLastName = profile.last_name || (profile.full_name ? profile.full_name.split(' ').slice(1).join(' ') : '')
+
+    const [firstName, setFirstName] = useState(initialFirstName)
+    const [lastName, setLastName] = useState(initialLastName)
     const [age, setAge] = useState(profile.age?.toString() || '')
     const [gender, setGender] = useState(profile.gender || '')
 
@@ -57,7 +64,7 @@ export default function ProfilePage({ profile }: ProfileFormProps) {
     const canGoNext = () => {
         switch (currentStep) {
             case 0:
-                return fullName.trim() && age && gender
+                return firstName.trim() && lastName.trim() && age && gender
             case 1:
                 return true
             case 2:
@@ -114,7 +121,8 @@ export default function ProfilePage({ profile }: ProfileFormProps) {
     const handleSave = () => {
         startTransition(async () => {
             const result = await updateProfile({
-                fullName: fullName.trim(),
+                firstName: firstName.trim(),
+                lastName: lastName.trim(),
                 age: parseInt(age),
                 gender,
                 sliders,
@@ -124,6 +132,10 @@ export default function ProfilePage({ profile }: ProfileFormProps) {
             })
             if (result.success) {
                 toast.success('Profile saved! 🎉')
+                if (requireSetup) {
+                    router.push('/dashboard')
+                    router.refresh()
+                }
             } else {
                 toast.error(result.error || 'Something went wrong.')
             }
@@ -170,14 +182,17 @@ export default function ProfilePage({ profile }: ProfileFormProps) {
             <div className="max-w-2xl mx-auto px-6 py-6 pb-32 min-h-full flex flex-col">
 
                 {/* Top Bar */}
-                <div className="flex items-center justify-between mb-6">
-                    <Link
-                        href="/dashboard"
-                        className="inline-flex items-center gap-1.5 text-gray-400 hover:text-charcoal transition-colors text-sm font-bold"
-                    >
-                        <ArrowRight size={14} className="rotate-180" />
-                        Back
-                    </Link>
+                <div className="flex items-center justify-between mb-6 h-[40px]">
+                    {!requireSetup ? (
+                        <Link
+                            href="/dashboard"
+                            className="inline-flex items-center text-gray-400 hover:text-charcoal transition-colors"
+                        >
+                            <X size={20} />
+                        </Link>
+                    ) : (
+                        <div className="text-sm font-bold text-charcoal">Complete Profile</div>
+                    )}
 
                     {/* Avatar */}
                     <div
@@ -264,16 +279,29 @@ export default function ProfilePage({ profile }: ProfileFormProps) {
                                         </div>
 
                                         <div className="space-y-5">
-                                            <div className="space-y-2">
-                                                <label className="text-xs font-bold uppercase tracking-widest text-charcoal ml-1">Full Name</label>
-                                                <input
-                                                    value={fullName}
-                                                    onChange={(e) => setFullName(e.target.value)}
-                                                    type="text"
-                                                    required
-                                                    className="w-full p-4 bg-cream border border-sand rounded-2xl focus:bg-white focus:ring-2 focus:ring-rust/20 focus:border-rust text-charcoal font-medium transition-all outline-none"
-                                                    placeholder="Your name"
-                                                />
+                                            <div className="flex gap-4">
+                                                <div className="space-y-2 flex-1">
+                                                    <label className="text-xs font-bold uppercase tracking-widest text-charcoal ml-1">First Name</label>
+                                                    <input
+                                                        value={firstName}
+                                                        onChange={(e) => setFirstName(e.target.value)}
+                                                        type="text"
+                                                        required
+                                                        className="w-full p-4 bg-cream border border-sand rounded-2xl focus:bg-white focus:ring-2 focus:ring-rust/20 focus:border-rust text-charcoal font-medium transition-all outline-none"
+                                                        placeholder="Jane"
+                                                    />
+                                                </div>
+                                                <div className="space-y-2 flex-1">
+                                                    <label className="text-xs font-bold uppercase tracking-widest text-charcoal ml-1">Last Name</label>
+                                                    <input
+                                                        value={lastName}
+                                                        onChange={(e) => setLastName(e.target.value)}
+                                                        type="text"
+                                                        required
+                                                        className="w-full p-4 bg-cream border border-sand rounded-2xl focus:bg-white focus:ring-2 focus:ring-rust/20 focus:border-rust text-charcoal font-medium transition-all outline-none"
+                                                        placeholder="Doe"
+                                                    />
+                                                </div>
                                             </div>
 
                                             <div className="grid grid-cols-2 gap-4">

@@ -10,7 +10,24 @@ async function callGemini(systemPrompt: string, userPrompt: string): Promise<str
     const body = JSON.stringify({
         system_instruction: { parts: [{ text: systemPrompt }] },
         contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
-        generationConfig: { temperature: 0.9, maxOutputTokens: 512 },
+        generationConfig: {
+            temperature: 0.9,
+            maxOutputTokens: 512,
+            responseMimeType: "application/json",
+            responseSchema: {
+                type: "OBJECT",
+                properties: {
+                    suggestions: {
+                        type: "ARRAY",
+                        description: "Exactly 2 text message suggestions",
+                        items: {
+                            type: "STRING"
+                        }
+                    }
+                },
+                required: ["suggestions"]
+            }
+        },
     })
 
     for (let attempt = 0; attempt < 3; attempt++) {
@@ -134,11 +151,11 @@ export async function GET(req: NextRequest) {
             if (userIds.length > 0) {
                 const { data: profiles } = await supabase
                     .from('profiles')
-                    .select('full_name, interests, bio')
+                    .select('first_name, interests, bio')
                     .in('id', userIds)
 
                 profileContext = (profiles || [])
-                    .map(p => `${p.full_name}: interests=${(p.interests || []).join(', ')}${p.bio ? `, bio=${p.bio}` : ''}`)
+                    .map(p => `${p.first_name}: interests=${(p.interests || []).join(', ')}${p.bio ? `, bio=${p.bio}` : ''}`)
                     .join('\n')
             }
 

@@ -22,7 +22,8 @@ export async function getProfile(userId: string): Promise<Profile | null> {
 }
 
 export async function updateProfile(payload: {
-    fullName: string
+    firstName: string
+    lastName: string
     age: number
     gender: string
     sliders: VibeSliders
@@ -38,8 +39,8 @@ export async function updateProfile(payload: {
     }
 
     // Validation
-    if (!payload.fullName.trim()) {
-        return { success: false, error: 'Name is required.' }
+    if (!payload.firstName.trim()) {
+        return { success: false, error: 'First name is required.' }
     }
 
     if (payload.age < 13 || payload.age > 120 || isNaN(payload.age)) {
@@ -51,7 +52,9 @@ export async function updateProfile(payload: {
     }
 
     const updates = {
-        full_name: payload.fullName.trim(),
+        first_name: payload.firstName.trim(),
+        last_name: payload.lastName.trim(),
+        full_name: `${payload.firstName.trim()} ${payload.lastName.trim()}`.trim(),
         age: payload.age,
         gender: payload.gender,
         sliders: payload.sliders,

@@ -51,18 +51,18 @@ export async function getConversations(): Promise<ConversationWithDetails[]> {
         .map(conv => conv.participants.find((p: Participant) => p.user_id !== user.id)?.user_id)
         .filter((id): id is string => !!id)
 
-    const profileMap = new Map<string, { full_name: string; avatar_url: string }>()
+    const profileMap = new Map<string, { first_name: string; avatar_url: string }>()
 
     if (partnerIds.length > 0) {
         const { data: profiles } = await supabase
             .from('profiles')
-            .select('id, full_name, avatar_url')
+            .select('id, first_name, avatar_url')
             .in('id', partnerIds)
 
         if (profiles) {
             for (const profile of profiles) {
                 profileMap.set(profile.id, {
-                    full_name: profile.full_name || 'Unknown',
+                    first_name: profile.first_name || 'Unknown',
                     avatar_url: profile.avatar_url || '',
                 })
             }
@@ -82,7 +82,7 @@ export async function getConversations(): Promise<ConversationWithDetails[]> {
             interested_user_ids: conv.interested_user_ids || [],
             meetup_suggested: conv.meetup_suggested || false,
             meetup_trigger_after: conv.meetup_trigger_after || null,
-            partner_name: profile?.full_name || 'Unknown',
+            partner_name: profile?.first_name || 'Unknown',
             partner_avatar: profile?.avatar_url || '',
         }
     })
@@ -219,7 +219,7 @@ export async function sendMessage(conversationId: string, content: string, id?: 
             const userIds = participants.map(p => p.user_id)
             const { data: profiles } = await supabase
                 .from('profiles')
-                .select('id, full_name, interests, bio')
+                .select('id, first_name, interests, bio')
                 .in('id', userIds)
 
             if (profiles) {

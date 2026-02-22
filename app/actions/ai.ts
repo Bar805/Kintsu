@@ -6,7 +6,7 @@ import { TRIO_CONFIG } from '@/lib/trio-config'
 
 export interface UserProfile {
     id: string
-    full_name: string
+    first_name: string
     interests: string[]
     bio: string
 }
@@ -37,7 +37,7 @@ export async function evaluateConversationState(conversationId: string, profiles
         ${TRIO_CONFIG.SCORING_RUBRIC}
 
         CONTEXT (Profiles):
-        ${profiles.map(p => `- ${p.full_name}: ${p.interests.join(', ')}`).join('\n')}
+        ${profiles.map(p => `- ${p.first_name}: ${p.interests.join(', ')}`).join('\n')}
 
         CHAT HISTORY:
         ${messages.map(m => `${m.is_ai_generated ? 'Trio' : 'User'}: ${m.content}`).join('\n')}
@@ -95,13 +95,13 @@ export async function generateTrioResponse(conversationId: string, profiles?: Us
             const userIds = participants.map(p => p.user_id)
             const { data: rawProfiles } = await supabase
                 .from('profiles')
-                .select('id, full_name, interests, bio')
+                .select('id, first_name, interests, bio')
                 .in('id', userIds)
 
             if (rawProfiles) {
                 activeProfiles = rawProfiles.map(p => ({
                     id: p.id,
-                    full_name: p.full_name || 'Unknown',
+                    first_name: p.first_name || 'Unknown',
                     interests: Array.isArray(p.interests) ? p.interests.map(String) : [],
                     bio: p.bio || ''
                 }))
@@ -125,7 +125,7 @@ export async function generateTrioResponse(conversationId: string, profiles?: Us
 
     // 2. Prepare Context
     const profileContext = activeProfiles.map(p => `
-    [User: ${p.full_name}]
+    [User: ${p.first_name}]
     - Bio: "${p.bio}"
     - Interests: ${p.interests.join(', ')}
     `).join('\n')

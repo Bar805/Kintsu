@@ -1,6 +1,7 @@
 import { createClient } from '@/utils/supabase/server'
 import { Message } from '@/types/database'
 import { getConversations, getMessages } from '@/app/actions/chat'
+import { getProfile } from '@/app/actions/profile'
 import ChatWindow from '@/components/ChatWindow'
 import ConversationList from '@/components/ConversationList'
 import MatchmakerTrigger from '@/components/MatchmakerTrigger'
@@ -22,6 +23,19 @@ export default async function DashboardPage(props: Props) {
 
     if (!user) {
         redirect('/')
+    }
+
+    const profile = await getProfile(user.id)
+    const isProfileComplete = Boolean(
+        profile?.first_name &&
+        profile?.age &&
+        profile?.gender &&
+        profile?.identity_chips &&
+        profile.identity_chips.length > 0
+    )
+
+    if (!isProfileComplete) {
+        redirect('/dashboard/profile')
     }
 
     const conversations = await getConversations()
@@ -83,9 +97,9 @@ export default async function DashboardPage(props: Props) {
                 <Link href="/dashboard/profile" className="flex flex-col items-center gap-1 text-gray-300 hover:text-charcoal transition-colors">
                     <User className="w-6 h-6" />
                 </Link>
-                <button className="flex flex-col items-center gap-1 text-gray-300 hover:text-charcoal transition-colors">
+                <Link href="/dashboard/settings" className="flex flex-col items-center gap-1 text-gray-300 hover:text-charcoal transition-colors">
                     <Settings className="w-6 h-6" />
-                </button>
+                </Link>
             </div>
         </div>
     )

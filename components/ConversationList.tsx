@@ -5,7 +5,7 @@ import { ConversationWithDetails } from '@/types/database'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useEffect } from 'react'
-import { LogOut, MessageSquare } from 'lucide-react'
+import { MessageSquare } from 'lucide-react'
 
 type Props = {
     initialConversations: ConversationWithDetails[]
@@ -14,13 +14,12 @@ type Props = {
 
 const AVATAR_COLORS = ['#D95D39', '#2B6B6E', '#F0C419', '#2D2D2D']
 
-const supabase = createClient()
-
 export default function ConversationList({ initialConversations, currentUserId }: Props) {
     const router = useRouter()
 
     useEffect(() => {
-        const channel = supabase
+        const localSupabase = createClient()
+        const channel = localSupabase
             .channel('realtime-conversation-list')
             .on(
                 'postgres_changes',
@@ -38,15 +37,9 @@ export default function ConversationList({ initialConversations, currentUserId }
             .subscribe()
 
         return () => {
-            supabase.removeChannel(channel)
+            localSupabase.removeChannel(channel)
         }
     }, [router, currentUserId])
-
-    const handleLogout = async () => {
-        await supabase.auth.signOut()
-        router.push('/')
-        router.refresh()
-    }
 
     return (
         <div className="space-y-4">
@@ -105,16 +98,6 @@ export default function ConversationList({ initialConversations, currentUserId }
                 </div>
             )}
 
-            {/* Logout */}
-            <div className="pt-4 mt-4 border-t border-sand">
-                <button
-                    onClick={handleLogout}
-                    className="flex items-center gap-2 text-sm text-gray-400 hover:text-charcoal transition-colors w-full px-2 py-2 rounded-lg hover:bg-cream"
-                >
-                    <LogOut size={16} />
-                    <span>Sign Out</span>
-                </button>
-            </div>
         </div>
     )
 }

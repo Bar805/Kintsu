@@ -166,6 +166,8 @@ async function seedUsers() {
                 const { error: profileError } = await supabase
                     .from('profiles')
                     .update({
+                        first_name: persona.full_name.split(' ')[0],
+                        last_name: persona.full_name.split(' ').slice(1).join(' '),
                         full_name: persona.full_name,
                         age: persona.age,
                         gender: persona.gender,
@@ -182,7 +184,6 @@ async function seedUsers() {
                     console.log(`   ✨ Updated Profile for ${persona.full_name}`)
                 }
             }
-
         } catch (err) {
             console.error('Unexpected error:', err)
         }

@@ -48,7 +48,9 @@ export interface PromptAnswer {
 export interface Profile {
   id: string;
   email: string;
-  full_name: string;
+  first_name: string;
+  last_name: string;
+  full_name?: string | null; // Keeping as optional for backwards compatibility during migration
   avatar_url: string;
   bio?: string | null;
   age?: number | null;

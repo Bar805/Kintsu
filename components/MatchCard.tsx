@@ -12,7 +12,7 @@ interface MatchCardProps {
     matchReason: string
     requesterProfile: {
         id: string
-        full_name: string
+        first_name: string
         age: number | null
         gender: string | null
         avatar_url: string | null
@@ -26,11 +26,7 @@ interface MatchCardProps {
 export default function MatchCard({ requestId, matchReason, requesterProfile, onClose, onResponded }: MatchCardProps) {
     const router = useRouter()
     const [loading, setLoading] = useState(false)
-    const initials = requesterProfile.full_name
-        ?.split(' ')
-        .map(n => n[0])
-        .join('')
-        .toUpperCase() || '?'
+    const initials = `${requesterProfile.first_name?.[0] || ''}`.toUpperCase() || '?'
 
     const handleAccept = async () => {
         setLoading(true)
@@ -109,7 +105,7 @@ export default function MatchCard({ requestId, matchReason, requesterProfile, on
                     {requesterProfile.avatar_url ? (
                         <img
                             src={requesterProfile.avatar_url}
-                            alt={requesterProfile.full_name}
+                            alt={requesterProfile.first_name}
                             className="w-full h-full object-cover"
                         />
                     ) : (
@@ -127,7 +123,7 @@ export default function MatchCard({ requestId, matchReason, requesterProfile, on
                     className="mb-4"
                 >
                     <h1 className="text-3xl font-bold text-charcoal">
-                        {requesterProfile.full_name}
+                        {requesterProfile.first_name}
                         {requesterProfile.age && (
                             <span className="text-xl font-normal text-charcoal/40 ml-2">
                                 {requesterProfile.age}

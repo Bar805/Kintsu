@@ -207,7 +207,7 @@ export async function getPendingMatchForUser(): Promise<(MatchRequest & { reques
     // Fetch requester profile for the character card
     const { data: profile } = await supabase
         .from('profiles')
-        .select('id, full_name, age, gender, avatar_url, bio, interests, identity_chips, ai_summary')
+        .select('id, first_name, age, gender, avatar_url, bio, interests, identity_chips, ai_summary')
         .eq('id', request.requester_id)
         .single()
 
@@ -354,7 +354,7 @@ export async function findMatch(requestId: string): Promise<void> {
     // Query candidates
     let query = adminClient
         .from('profiles')
-        .select('id, full_name, age, gender, bio, interests, looking_for, identity_chips, ai_summary')
+        .select('id, first_name, age, gender, bio, interests, looking_for, identity_chips, ai_summary')
         .limit(20)
 
     if (excludeIds.length > 0) {
@@ -374,7 +374,7 @@ export async function findMatch(requestId: string): Promise<void> {
     // Build candidates text for AI
     const candidatesList = candidates.map(c => `
         ID: ${c.id}
-        Name: ${c.full_name}
+        Name: ${c.first_name}
         Age: ${c.age}
         Gender: ${c.gender}
         Bio: "${c.bio || ''}"

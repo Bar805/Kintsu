@@ -51,7 +51,8 @@ async function createTrioAgent() {
         .from('profiles')
         .upsert({
             id: trioUser.id,
-            email: email,
+            first_name: name,
+            last_name: '',
             full_name: name,
             avatar_url: 'https://api.dicebear.com/9.x/bottts-neutral/svg?seed=Trio', // distinct robot avatar
             bio: 'I am your AI Wingman.',

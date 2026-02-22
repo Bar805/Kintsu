@@ -19,5 +19,13 @@ export default async function ProfilePage() {
         return <div>Profile not found. Please contact support.</div>
     }
 
-    return <ProfileForm profile={profile} />
+    const isProfileComplete = Boolean(
+        profile.first_name &&
+        profile.age &&
+        profile.gender &&
+        profile.identity_chips &&
+        profile.identity_chips.length > 0
+    )
+
+    return <ProfileForm profile={profile} requireSetup={!isProfileComplete} />
 }
