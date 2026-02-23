@@ -139,22 +139,37 @@ export async function GET(req: NextRequest) {
                 .eq('conversation_id', conversationId)
 
             const userIds = (participants || []).map(p => p.user_id)
+            const partnerIds = userIds.filter(id => id !== user.id)
 
-            // Guard: .in('id', []) generates invalid SQL in Postgres
+            // Fetch current user's full profile (name, interests, bio) for voice/style
             let profileContext = ''
-            if (userIds.length > 0) {
-                const { data: profiles } = await supabase
-                    .from('profiles')
-                    .select('first_name, interests, bio')
-                    .in('id', userIds)
+            const { data: myProfile } = await supabase
+                .from('profiles')
+                .select('first_name, interests, bio')
+                .eq('id', user.id)
+                .single()
 
-                profileContext = (profiles || [])
-                    .map(p => `${p.first_name}: interests=${(p.interests || []).join(', ')}${p.bio ? `, bio=${p.bio}` : ''}`)
-                    .join('\n')
+            if (myProfile) {
+                profileContext += `You (${myProfile.first_name}): interests=${(myProfile.interests || []).join(', ')}${myProfile.bio ? `, bio=${myProfile.bio}` : ''}`
+            }
+
+            // Fetch partner's name + interests ONLY (no bio, to prevent data leaks)
+            if (partnerIds.length > 0) {
+                const { data: partnerProfiles } = await supabase
+                    .from('profiles')
+                    .select('first_name, interests')
+                    .in('id', partnerIds)
+
+                if (partnerProfiles) {
+                    const partnerContext = partnerProfiles
+                        .map(p => `${p.first_name}: interests=${(p.interests || []).join(', ')}`)
+                        .join('\n')
+                    profileContext += `\n${partnerContext}`
+                }
             }
 
             const userPrompt = profileContext
-                ? `User profiles:\n${profileContext}\n\nGenerate 2 icebreaker opening messages.`
+                ? `User profiles:\n${profileContext}\n\nGenerate 2 icebreaker opening messages for You to send.`
                 : 'Generate 2 natural icebreaker opening messages.'
 
             raw = await callGemini(ICEBREAKER_PROMPT, userPrompt)
