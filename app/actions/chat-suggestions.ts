@@ -158,7 +158,8 @@ export async function generateMeetupSuggestion(
             `Profiles:\n${profileInfo}\n\nRecent chat:\n${chatLog}`,
             meetupSchema
         )
-        const parsed = JSON.parse(raw) as MeetupSuggestion
+        const sanitized = raw.replace(/\n/g, '\\n').replace(/\r/g, '\\r')
+        const parsed = JSON.parse(sanitized) as MeetupSuggestion
 
         // Mark meetup as suggested
         await admin
@@ -233,22 +234,25 @@ export async function markInterested(
         const newIds = [...currentIds, user.id]
         const updatePayload: any = { interested_user_ids: newIds }
 
-        // If both users are now interested and no trigger yet
-        if (newIds.length >= 2 && !conv.meetup_suggested && !conv.meetup_trigger_after) {
-            const { count } = await admin
-                .from('messages')
-                .select('id', { count: 'exact', head: true })
-                .eq('conversation_id', conversationId)
+        let shouldTriggerMeetup = false
 
-            // Random 2-8 message delay
-            const delay = Math.floor(Math.random() * 7) + 2
-            updatePayload.meetup_trigger_after = (count || 0) + delay
+        // If both users are now interested and no trigger yet
+        if (newIds.length >= 2 && !conv.meetup_suggested) {
+            updatePayload.meetup_suggested = true
+            shouldTriggerMeetup = true
         }
 
         await admin
             .from('conversations')
             .update(updatePayload)
             .eq('id', conversationId)
+
+        if (shouldTriggerMeetup) {
+            // Fire in background
+            generateMeetupSuggestion(conversationId).catch(err =>
+                console.error('Immediate Meetup suggestion error:', err)
+            )
+        }
 
         return { interested: true }
     }

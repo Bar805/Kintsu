@@ -180,29 +180,7 @@ export async function sendMessage(conversationId: string, content: string, id?: 
                 .update(updatePayload)
                 .eq('id', conversationId)
 
-            // --- MEETUP TRIGGER CHECK ---
-            if (conv.meetup_trigger_after && !conv.meetup_suggested) {
-                const { count } = await adminClient
-                    .from('messages')
-                    .select('id', { count: 'exact', head: true })
-                    .eq('conversation_id', conversationId)
 
-                if (count && count >= conv.meetup_trigger_after) {
-                    // Atomic claim: only the update that flips meetup_suggested false→true fires the suggestion
-                    const { data: claimed } = await adminClient
-                        .from('conversations')
-                        .update({ meetup_suggested: true })
-                        .eq('id', conversationId)
-                        .eq('meetup_suggested', false)
-                        .select('id')
-
-                    if (claimed && claimed.length > 0) {
-                        generateMeetupSuggestion(conversationId).catch(err =>
-                            console.error('Meetup suggestion error:', err)
-                        )
-                    }
-                }
-            }
         }
     } catch (e) {
         console.error('Timer/meetup update error:', e)
