@@ -132,10 +132,8 @@ export default function ProfilePage({ profile, requireSetup }: ProfileFormProps)
             })
             if (result.success) {
                 toast.success('Profile saved! 🎉')
-                if (requireSetup) {
-                    router.push('/dashboard')
-                    router.refresh()
-                }
+                router.push('/dashboard')
+                router.refresh()
             } else {
                 toast.error(result.error || 'Something went wrong.')
             }
