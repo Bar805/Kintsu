@@ -65,8 +65,8 @@ export default function MatchCard({ requestId, matchReason, requesterProfile, on
 
     // Parse match reason — take first 3 short bullets max
     const bullets = matchReason
-        ?.split('\n')
-        .map(b => b.replace(/^[•\-]\s*/, '').trim())
+        ?.split(/[\n•]/)
+        .map(b => b.replace(/^[-]\s*/, '').trim())
         .filter(b => b.length > 0)
         .slice(0, 3) || []
 

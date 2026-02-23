@@ -65,7 +65,7 @@ Pick the BEST single match. Consider personality compatibility, shared interests
 
 Write a matchReason shown on a card to the matched person. Use exactly 3 SHORT bullet points (max 8 words each). Be punchy and specific, not generic. Example: "• Both obsessed with sourdough\n• You're the climbing partner they need\n• Shared love of late-night philosophy"
 
-Also write an intro_message that Kintsu would post in the group chat once both people accept. It should introduce them to each other and mention what they have in common. Be casual and fun.
+Also write an introMessage that Kintsu posts in the chat once both people accept. Address BOTH people together (e.g. "You two...", "Both of you..."). Mention what they share. Speak as Kintsu — a single friend who knows them both. Never say "we". Keep it warm, casual, and under 2 sentences.
 `
 
 // ─── Helper: Get Admin Supabase Client ───────────────────────────────────────
@@ -479,7 +479,11 @@ export async function respondToMatch(
 
         const { data: conversation, error: convError } = await adminClient
             .from('conversations')
-            .insert({ is_active: true })
+            .insert({
+                is_active: true,
+                timer_expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+                user_ids_who_messaged: [],
+            })
             .select()
             .single()
 
@@ -499,11 +503,20 @@ export async function respondToMatch(
             .join('\n')
 
         // Generate intro message
-        let introMessage = "Hey! Kintsu connected you two — have fun getting to know each other! 🎉"
+        let introMessage = "Hey you two! I connected you because I think you'd really hit it off — have fun getting to know each other! 🎉"
         try {
-            const introPrompt = `You are Kintsu. You just matched two people. Write a brief, fun intro message for their chat. Mention what they have in common based on this conversation: ${conversationText}. Output just the message text, no JSON.`
+            const introPrompt = `You are Kintsu, a single friend who knows both people. You just matched two people. Write a brief, warm intro message for their chat. Address BOTH of them together (e.g. "You two...", "Both of you..."). Mention what they have in common based on this conversation: ${conversationText}. Never say "we". Speak as Kintsu alone. Keep it to 1-2 sentences. Output just the message text, nothing else.`
             const raw = await callGemini(introPrompt, [{ role: 'user', content: 'Generate the intro' }])
-            introMessage = raw.replace(/^["']|["']$/g, '').trim()
+            // Gemini returns JSON due to responseMimeType — extract the actual text
+            let cleaned = raw.trim()
+            try {
+                const parsed = JSON.parse(cleaned)
+                // Handle {"message": "..."} or {"text": "..."} or just a plain string
+                cleaned = parsed.message || parsed.text || parsed.intro || (typeof parsed === 'string' ? parsed : cleaned)
+            } catch {
+                // Not JSON, use as-is
+            }
+            introMessage = cleaned.replace(/^["']|["']$/g, '').trim()
         } catch (e) {
             console.error('Intro generation error:', e)
         }

@@ -15,6 +15,7 @@ export interface Conversation {
   interested_user_ids: string[];
   meetup_suggested: boolean;
   meetup_trigger_after: number | null;
+  user_ids_who_messaged: string[];
 }
 
 export interface Message {

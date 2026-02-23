@@ -1,6 +1,6 @@
 import { createClient } from '@/utils/supabase/server'
 import { Message } from '@/types/database'
-import { getConversations, getMessages } from '@/app/actions/chat'
+import { getConversations, getMessages, archiveExpiredConversations } from '@/app/actions/chat'
 import { getProfile } from '@/app/actions/profile'
 import ChatWindow from '@/components/ChatWindow'
 import ConversationList from '@/components/ConversationList'
@@ -38,7 +38,12 @@ export default async function DashboardPage(props: Props) {
         redirect('/dashboard/profile')
     }
 
+    // Archive any expired conversations before fetching
+    await archiveExpiredConversations()
+
     const conversations = await getConversations()
+    const activeConversations = conversations.filter(c => c.is_active)
+    const archivedConversations = conversations.filter(c => !c.is_active)
     const selectedConversation = conversations.find(c => c.id === selectedConversationId)
 
     let initialMessages: Message[] = []
@@ -84,8 +89,12 @@ export default async function DashboardPage(props: Props) {
                     <MatchmakerTrigger />
                 </div>
 
-                {/* Active Chats Section */}
-                <ConversationList initialConversations={conversations} currentUserId={user.id} />
+                {/* Chats Section */}
+                <ConversationList
+                    activeConversations={activeConversations}
+                    archivedConversations={archivedConversations}
+                    currentUserId={user.id}
+                />
             </div>
 
             {/* Bottom Nav */}

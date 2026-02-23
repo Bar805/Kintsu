@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
 import { ConversationWithDetails } from '@/types/database'
 
 // --- Use vi.hoisted so mock variables are available in hoisted vi.mock factories ---
@@ -34,7 +33,7 @@ vi.mock('@/utils/supabase/client', () => ({
 import ConversationList from '@/components/ConversationList'
 
 // --- Test data ---
-const mockConversations: ConversationWithDetails[] = [
+const mockActiveConversations: ConversationWithDetails[] = [
     {
         id: 'conv-1',
         created_at: '2025-06-01T00:00:00Z',
@@ -44,6 +43,7 @@ const mockConversations: ConversationWithDetails[] = [
         interested_user_ids: [],
         meetup_suggested: false,
         meetup_trigger_after: null,
+        user_ids_who_messaged: [],
         partner_name: 'Alice',
         partner_avatar: '',
     },
@@ -56,7 +56,24 @@ const mockConversations: ConversationWithDetails[] = [
         interested_user_ids: [],
         meetup_suggested: false,
         meetup_trigger_after: null,
+        user_ids_who_messaged: [],
         partner_name: 'Bob',
+        partner_avatar: '',
+    },
+]
+
+const mockArchivedConversations: ConversationWithDetails[] = [
+    {
+        id: 'conv-3',
+        created_at: '2025-05-15T00:00:00Z',
+        is_active: false,
+        timer_expires_at: null,
+        last_message_sender_id: null,
+        interested_user_ids: [],
+        meetup_suggested: false,
+        meetup_trigger_after: null,
+        user_ids_who_messaged: ['user-a'],
+        partner_name: 'Charlie',
         partner_avatar: '',
     },
 ]
@@ -66,10 +83,11 @@ describe('ConversationList', () => {
         vi.clearAllMocks()
     })
 
-    it('renders conversation partner names', () => {
+    it('renders active conversation partner names', () => {
         render(
             <ConversationList
-                initialConversations={mockConversations}
+                activeConversations={mockActiveConversations}
+                archivedConversations={[]}
                 currentUserId="test-user-id"
             />
         )
@@ -81,7 +99,8 @@ describe('ConversationList', () => {
     it('renders partner initials as avatar fallback', () => {
         render(
             <ConversationList
-                initialConversations={mockConversations}
+                activeConversations={mockActiveConversations}
+                archivedConversations={[]}
                 currentUserId="test-user-id"
             />
         )
@@ -90,10 +109,11 @@ describe('ConversationList', () => {
         expect(screen.getByText('B')).toBeInTheDocument()
     })
 
-    it('shows empty state when there are no conversations', () => {
+    it('shows empty state when there are no active conversations', () => {
         render(
             <ConversationList
-                initialConversations={[]}
+                activeConversations={[]}
+                archivedConversations={[]}
                 currentUserId="test-user-id"
             />
         )
@@ -104,7 +124,8 @@ describe('ConversationList', () => {
     it('renders conversation links with correct hrefs', () => {
         render(
             <ConversationList
-                initialConversations={mockConversations}
+                activeConversations={mockActiveConversations}
+                archivedConversations={[]}
                 currentUserId="test-user-id"
             />
         )
@@ -117,11 +138,39 @@ describe('ConversationList', () => {
     it('subscribes to real-time updates on mount', () => {
         render(
             <ConversationList
-                initialConversations={mockConversations}
+                activeConversations={mockActiveConversations}
+                archivedConversations={[]}
                 currentUserId="test-user-id"
             />
         )
 
         expect(mockSubscribe).toHaveBeenCalled()
+    })
+
+    it('renders archived chats section when archived conversations exist', () => {
+        render(
+            <ConversationList
+                activeConversations={mockActiveConversations}
+                archivedConversations={mockArchivedConversations}
+                currentUserId="test-user-id"
+            />
+        )
+
+        expect(screen.getByText('Active Chats')).toBeInTheDocument()
+        expect(screen.getByText('Archived Chats')).toBeInTheDocument()
+        expect(screen.getByText('Charlie')).toBeInTheDocument()
+    })
+
+    it('does not render archived section when no archived conversations', () => {
+        render(
+            <ConversationList
+                activeConversations={mockActiveConversations}
+                archivedConversations={[]}
+                currentUserId="test-user-id"
+            />
+        )
+
+        expect(screen.getByText('Active Chats')).toBeInTheDocument()
+        expect(screen.queryByText('Archived Chats')).not.toBeInTheDocument()
     })
 })

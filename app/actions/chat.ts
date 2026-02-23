@@ -82,6 +82,7 @@ export async function getConversations(): Promise<ConversationWithDetails[]> {
             interested_user_ids: conv.interested_user_ids || [],
             meetup_suggested: conv.meetup_suggested || false,
             meetup_trigger_after: conv.meetup_trigger_after || null,
+            user_ids_who_messaged: conv.user_ids_who_messaged || [],
             partner_name: profile?.first_name || 'Unknown',
             partner_avatar: profile?.avatar_url || '',
         }
@@ -142,6 +143,18 @@ export async function sendMessage(conversationId: string, content: string, id?: 
         { auth: { autoRefreshToken: false, persistSession: false } }
     )
 
+    // --- CHECK IF CONVERSATION IS ARCHIVED ---
+    const { data: convCheck } = await adminClient
+        .from('conversations')
+        .select('is_active')
+        .eq('id', conversationId)
+        .single()
+
+    if (convCheck && !convCheck.is_active) {
+        console.log('Cannot send message: conversation is archived')
+        return false
+    }
+
     const { error } = await supabase
         .from('messages')
         .insert({
@@ -157,33 +170,46 @@ export async function sendMessage(conversationId: string, content: string, id?: 
         return false
     }
 
-    // --- TIMER RESET (alternating sender only) ---
+    // --- TRACK WHO HAS MESSAGED & CLEAR TIMER ---
     try {
         const { data: conv } = await adminClient
             .from('conversations')
-            .select('last_message_sender_id, meetup_trigger_after, meetup_suggested')
+            .select('user_ids_who_messaged, last_message_sender_id')
             .eq('id', conversationId)
             .single()
 
         if (conv) {
-            const updatePayload: any = { last_message_sender_id: user.id }
+            const currentMessaged: string[] = conv.user_ids_who_messaged || []
+            const updatedMessaged = currentMessaged.includes(user.id)
+                ? currentMessaged
+                : [...currentMessaged, user.id]
 
-            // Only reset timer if a DIFFERENT user sent the last message
-            if (conv.last_message_sender_id !== user.id) {
-                updatePayload.timer_expires_at = new Date(
-                    Date.now() + 24 * 60 * 60 * 1000
-                ).toISOString()
+            // Get participant count to know when "both" have messaged
+            const { data: participants } = await adminClient
+                .from('participants')
+                .select('user_id')
+                .eq('conversation_id', conversationId)
+
+            const participantIds = (participants || []).map(p => p.user_id)
+            const allHaveMessaged = participantIds.every(pid => updatedMessaged.includes(pid))
+
+            const updatePayload: any = {
+                last_message_sender_id: user.id,
+                user_ids_who_messaged: updatedMessaged,
+            }
+
+            // If all participants have messaged, clear the timer (chat is saved)
+            if (allHaveMessaged) {
+                updatePayload.timer_expires_at = null
             }
 
             await adminClient
                 .from('conversations')
                 .update(updatePayload)
                 .eq('id', conversationId)
-
-
         }
     } catch (e) {
-        console.error('Timer/meetup update error:', e)
+        console.error('Timer/tracking update error:', e)
     }
 
     // --- TRIGGER AI EVALUATION ---
@@ -236,7 +262,11 @@ export async function createMatchConversation(matchId: string, introMessage?: st
     // 2. Create Conversation
     const { data: conversation, error: convError } = await adminSupabase
         .from('conversations')
-        .insert({ is_active: true })
+        .insert({
+            is_active: true,
+            timer_expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+            user_ids_who_messaged: [],
+        })
         .select()
         .single()
 
@@ -270,4 +300,35 @@ export async function createMatchConversation(matchId: string, introMessage?: st
     }
 
     return conversation.id
+}
+
+// ─── Archive expired conversations ───────────────────────────────────────────
+
+export async function archiveExpiredConversations(): Promise<number> {
+    const adminClient = createSupabaseClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.SUPABASE_SERVICE_ROLE_KEY!,
+        { auth: { autoRefreshToken: false, persistSession: false } }
+    )
+
+    const now = new Date().toISOString()
+
+    const { data, error } = await adminClient
+        .from('conversations')
+        .update({ is_active: false })
+        .eq('is_active', true)
+        .not('timer_expires_at', 'is', null)
+        .lt('timer_expires_at', now)
+        .select('id')
+
+    if (error) {
+        console.error('Error archiving expired conversations:', error)
+        return 0
+    }
+
+    if (data && data.length > 0) {
+        console.log(`Archived ${data.length} expired conversation(s):`, data.map(c => c.id))
+    }
+
+    return data?.length || 0
 }

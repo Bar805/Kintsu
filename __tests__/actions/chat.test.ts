@@ -172,7 +172,16 @@ describe('chat actions', () => {
             mockAdminClient.from.mockImplementation((table: string) => {
                 if (table === 'conversations') {
                     mockAdminClient._query.mockResult({
-                        data: { last_message_sender_id: 'other-user', meetup_trigger_after: null, meetup_suggested: false },
+                        data: {
+                            is_active: true,
+                            user_ids_who_messaged: [],
+                            last_message_sender_id: 'other-user',
+                        },
+                        error: null,
+                    })
+                } else if (table === 'participants') {
+                    mockAdminClient._query.mockResult({
+                        data: [{ user_id: 'test-user-id' }, { user_id: 'other-user' }],
                         error: null,
                     })
                 }

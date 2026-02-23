@@ -368,6 +368,8 @@ export interface ConversationMeta {
     timerExpiresAt: string | null
     isInterested: boolean
     meetupSuggested: boolean
+    isActive: boolean
+    userIdsWhoMessaged: string[]
 }
 
 export async function getConversationMeta(
@@ -381,7 +383,7 @@ export async function getConversationMeta(
 
     const { data: conv, error } = await admin
         .from('conversations')
-        .select('timer_expires_at, interested_user_ids, meetup_suggested')
+        .select('timer_expires_at, interested_user_ids, meetup_suggested, is_active, user_ids_who_messaged')
         .eq('id', conversationId)
         .single()
 
@@ -392,6 +394,8 @@ export async function getConversationMeta(
             timerExpiresAt: null,
             isInterested: false,
             meetupSuggested: false,
+            isActive: true,
+            userIdsWhoMessaged: [],
         }
     }
 
@@ -399,5 +403,7 @@ export async function getConversationMeta(
         timerExpiresAt: conv.timer_expires_at,
         isInterested: (conv.interested_user_ids || []).includes(user.id),
         meetupSuggested: conv.meetup_suggested || false,
+        isActive: conv.is_active ?? true,
+        userIdsWhoMessaged: conv.user_ids_who_messaged || [],
     }
 }

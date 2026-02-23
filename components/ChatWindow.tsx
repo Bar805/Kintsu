@@ -66,6 +66,8 @@ export default function ChatWindow({ conversation, initialMessages, currentUserI
     const [interestLoading, setInterestLoading] = useState(false)
     const [timerExpiry, setTimerExpiry] = useState<string | null>(conversation.timer_expires_at)
     const [countdown, setCountdown] = useState('24:00:00')
+    const [isActive, setIsActive] = useState(conversation.is_active)
+    const [bothUsersMessaged, setBothUsersMessaged] = useState(false)
     const endRef = useRef<HTMLDivElement>(null)
 
     // ─── Scroll to bottom ────────────────────────────────────────────────────
@@ -81,6 +83,7 @@ export default function ChatWindow({ conversation, initialMessages, currentUserI
         setNewMessage('')
         setSuggestions([])
         setTimerExpiry(conversation.timer_expires_at)
+        setIsActive(conversation.is_active)
     }, [conversation.id, initialMessages])
 
     // ─── Load initial meta (interest state) ──────────────────────────────────
@@ -89,17 +92,22 @@ export default function ChatWindow({ conversation, initialMessages, currentUserI
         getConversationMeta(conversation.id).then(meta => {
             setInterested(meta.isInterested)
             setTimerExpiry(meta.timerExpiresAt)
+            setIsActive(meta.isActive)
+            // Both users have messaged if timer is cleared (null) and we know the conversation has had messages
+            const participantCount = 2 // conversations always have 2 participants
+            setBothUsersMessaged(meta.userIdsWhoMessaged.length >= participantCount)
         }).catch(() => { })
     }, [conversation.id])
 
-    // ─── Countdown timer tick ────────────────────────────────────────────────
+    // ─── Countdown timer tick (only when timer is active) ─────────────────────
 
     useEffect(() => {
+        if (!timerExpiry || bothUsersMessaged) return
         const tick = () => setCountdown(formatCountdown(timerExpiry))
         tick()
         const interval = setInterval(tick, 1000)
         return () => clearInterval(interval)
-    }, [timerExpiry])
+    }, [timerExpiry, bothUsersMessaged])
 
     // ─── Realtime message subscription ───────────────────────────────────────
 
@@ -136,6 +144,9 @@ export default function ChatWindow({ conversation, initialMessages, currentUserI
             try {
                 const meta = await getConversationMeta(conversation.id)
                 setTimerExpiry(meta.timerExpiresAt)
+                setIsActive(meta.isActive)
+                const participantCount = 2
+                setBothUsersMessaged(meta.userIdsWhoMessaged.length >= participantCount)
             } catch { }
         }
         refreshMeta()
@@ -269,13 +280,15 @@ export default function ChatWindow({ conversation, initialMessages, currentUserI
                         </div>
                     </div>
 
-                    {/* Timer */}
-                    <div className="flex items-center gap-2 bg-sand/50 px-3 py-1.5 rounded-full">
-                        <Clock className="w-3 h-3 text-rust" />
-                        <span className="text-xs font-mono font-bold text-charcoal">
-                            {countdown}
-                        </span>
-                    </div>
+                    {/* Timer — only show when both users haven't messaged yet */}
+                    {!bothUsersMessaged && isActive && timerExpiry && (
+                        <div className="flex items-center gap-2 bg-sand/50 px-3 py-1.5 rounded-full">
+                            <Clock className="w-3 h-3 text-rust" />
+                            <span className="text-xs font-mono font-bold text-charcoal">
+                                {countdown}
+                            </span>
+                        </div>
+                    )}
                 </div>
             </div>
 
@@ -379,105 +392,117 @@ export default function ChatWindow({ conversation, initialMessages, currentUserI
             </div>
 
             {/* Footer */}
-            <div className="bg-cream p-4 pb-8 sticky bottom-0 z-20 border-t border-sand relative">
-                {/* Interested Button — floating above */}
-                <div className="absolute left-0 right-0 -top-16 flex justify-center pointer-events-none">
-                    <button
-                        onClick={handleInterestClick}
-                        disabled={interestLoading}
-                        className={`pointer-events-auto flex items-center gap-3 px-8 py-3 rounded-full font-bold uppercase text-xs tracking-widest transition-all shadow-lg ${interested
-                            ? 'bg-teal text-white ring-2 ring-offset-2 ring-teal hover:bg-teal/80'
-                            : 'bg-white text-charcoal hover:bg-rust hover:text-white border border-sand'
-                            } disabled:opacity-70`}
-                    >
-                        <Coffee className="w-4 h-4" />
-                        {interestLoading ? '...' : interested ? 'Interested ✓' : 'Interested?'}
-                    </button>
+            {!isActive ? (
+                /* Archived banner */
+                <div className="bg-sand/60 p-4 pb-8 sticky bottom-0 z-20 border-t border-sand">
+                    <div className="flex items-center justify-center gap-2 py-3">
+                        <Clock className="w-4 h-4 text-gray-400" />
+                        <span className="text-sm font-bold text-gray-400 uppercase tracking-widest">
+                            Archived
+                        </span>
+                    </div>
                 </div>
-
-                {/* Suggested Replies / Icebreakers */}
-                <AnimatePresence>
-                    {isLoadingSuggestions && (
-                        <motion.div
-                            key="shimmer"
-                            initial={{ opacity: 0, y: 10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, y: 10 }}
-                            className="flex flex-col space-y-3 mb-4"
-                        >
-                            <div className="flex items-center space-x-2">
-                                <Sparkles className="w-4 h-4 text-mustard fill-mustard animate-pulse" />
-                                <span className="text-xs font-bold text-charcoal/40 uppercase tracking-widest">
-                                    Thinking...
-                                </span>
-                            </div>
-                            <div className="flex flex-col gap-2">
-                                <div className="h-11 rounded-xl bg-sand/60 animate-pulse" />
-                                <div className="h-11 rounded-xl bg-sand/60 animate-pulse" />
-                            </div>
-                        </motion.div>
-                    )}
-                    {!isLoadingSuggestions && suggestions.length > 0 && (
-                        <motion.div
-                            key="suggestions"
-                            initial={{ opacity: 0, y: 10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, y: 10 }}
-                            className="flex flex-col space-y-3 mb-4"
-                        >
-                            <div className="flex items-center space-x-2">
-                                <Sparkles className="w-4 h-4 text-mustard fill-mustard" />
-                                <span className="text-xs font-bold text-charcoal uppercase tracking-widest">
-                                    {messages.length === 0 ? 'Icebreakers' : 'Suggested Replies'}
-                                </span>
-                            </div>
-                            <div className="flex flex-col gap-2">
-                                {suggestions.map((opt, i) => (
-                                    <button
-                                        key={i}
-                                        onClick={() => handleSuggestionClick(opt)}
-                                        className="bg-white text-charcoal text-sm font-medium px-5 py-3 rounded-xl shadow-sm border border-sand hover:border-rust hover:text-rust transition-colors text-left flex items-center group"
-                                    >
-                                        <div className="w-2 h-2 rounded-full bg-sand mr-3 group-hover:bg-rust transition-colors shrink-0" />
-                                        {opt}
-                                    </button>
-                                ))}
-                            </div>
-                        </motion.div>
-                    )}
-                </AnimatePresence>
-
-                {/* Input */}
-                <form onSubmit={handleSend} className="flex items-center gap-2">
-                    {messages.length > 0 && (
+            ) : (
+                <div className="bg-cream p-4 pb-8 sticky bottom-0 z-20 border-t border-sand relative">
+                    {/* Interested Button — floating above */}
+                    <div className="absolute left-0 right-0 -top-16 flex justify-center pointer-events-none">
                         <button
-                            type="button"
-                            onClick={fetchSuggestions}
-                            disabled={isLoadingSuggestions}
-                            title="Get AI suggestions"
-                            className="w-12 h-12 bg-white border border-sand rounded-full flex items-center justify-center hover:border-mustard transition-colors disabled:opacity-50 shrink-0"
+                            onClick={handleInterestClick}
+                            disabled={interestLoading}
+                            className={`pointer-events-auto flex items-center gap-3 px-8 py-3 rounded-full font-bold uppercase text-xs tracking-widest transition-all shadow-lg ${interested
+                                ? 'bg-teal text-white ring-2 ring-offset-2 ring-teal hover:bg-teal/80'
+                                : 'bg-white text-charcoal hover:bg-rust hover:text-white border border-sand'
+                                } disabled:opacity-70`}
                         >
-                            <Sparkles className={`w-5 h-5 ${isLoadingSuggestions ? 'animate-pulse text-mustard' : 'text-gray-400'}`} />
+                            <Coffee className="w-4 h-4" />
+                            {interestLoading ? '...' : interested ? 'Interested ✓' : 'Interested?'}
                         </button>
-                    )}
-                    <input
-                        type="text"
-                        value={newMessage}
-                        onChange={(e) => setNewMessage(e.target.value)}
-                        placeholder="Type a message..."
-                        className="flex-1 bg-white border border-sand h-12 px-5 rounded-full text-sm font-medium placeholder-gray-400 focus:outline-none focus:border-rust transition-colors"
-                    />
-                    {newMessage.trim() && (
-                        <button
-                            type="submit"
-                            disabled={isSending}
-                            className="w-12 h-12 bg-charcoal text-white rounded-full flex items-center justify-center hover:scale-105 transition-transform disabled:opacity-50"
-                        >
-                            <Send className="w-5 h-5" />
-                        </button>
-                    )}
-                </form>
-            </div>
+                    </div>
+
+                    {/* Suggested Replies / Icebreakers */}
+                    <AnimatePresence>
+                        {isLoadingSuggestions && (
+                            <motion.div
+                                key="shimmer"
+                                initial={{ opacity: 0, y: 10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={{ opacity: 0, y: 10 }}
+                                className="flex flex-col space-y-3 mb-4"
+                            >
+                                <div className="flex items-center space-x-2">
+                                    <Sparkles className="w-4 h-4 text-mustard fill-mustard animate-pulse" />
+                                    <span className="text-xs font-bold text-charcoal/40 uppercase tracking-widest">
+                                        Thinking...
+                                    </span>
+                                </div>
+                                <div className="flex flex-col gap-2">
+                                    <div className="h-11 rounded-xl bg-sand/60 animate-pulse" />
+                                    <div className="h-11 rounded-xl bg-sand/60 animate-pulse" />
+                                </div>
+                            </motion.div>
+                        )}
+                        {!isLoadingSuggestions && suggestions.length > 0 && (
+                            <motion.div
+                                key="suggestions"
+                                initial={{ opacity: 0, y: 10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={{ opacity: 0, y: 10 }}
+                                className="flex flex-col space-y-3 mb-4"
+                            >
+                                <div className="flex items-center space-x-2">
+                                    <Sparkles className="w-4 h-4 text-mustard fill-mustard" />
+                                    <span className="text-xs font-bold text-charcoal uppercase tracking-widest">
+                                        {messages.length === 0 ? 'Icebreakers' : 'Suggested Replies'}
+                                    </span>
+                                </div>
+                                <div className="flex flex-col gap-2">
+                                    {suggestions.map((opt, i) => (
+                                        <button
+                                            key={i}
+                                            onClick={() => handleSuggestionClick(opt)}
+                                            className="bg-white text-charcoal text-sm font-medium px-5 py-3 rounded-xl shadow-sm border border-sand hover:border-rust hover:text-rust transition-colors text-left flex items-center group"
+                                        >
+                                            <div className="w-2 h-2 rounded-full bg-sand mr-3 group-hover:bg-rust transition-colors shrink-0" />
+                                            {opt}
+                                        </button>
+                                    ))}
+                                </div>
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
+
+                    {/* Input */}
+                    <form onSubmit={handleSend} className="flex items-center gap-2">
+                        {messages.length > 0 && (
+                            <button
+                                type="button"
+                                onClick={fetchSuggestions}
+                                disabled={isLoadingSuggestions}
+                                title="Get AI suggestions"
+                                className="w-12 h-12 bg-white border border-sand rounded-full flex items-center justify-center hover:border-mustard transition-colors disabled:opacity-50 shrink-0"
+                            >
+                                <Sparkles className={`w-5 h-5 ${isLoadingSuggestions ? 'animate-pulse text-mustard' : 'text-gray-400'}`} />
+                            </button>
+                        )}
+                        <input
+                            type="text"
+                            value={newMessage}
+                            onChange={(e) => setNewMessage(e.target.value)}
+                            placeholder="Type a message..."
+                            className="flex-1 bg-white border border-sand h-12 px-5 rounded-full text-sm font-medium placeholder-gray-400 focus:outline-none focus:border-rust transition-colors"
+                        />
+                        {newMessage.trim() && (
+                            <button
+                                type="submit"
+                                disabled={isSending}
+                                className="w-12 h-12 bg-charcoal text-white rounded-full flex items-center justify-center hover:scale-105 transition-transform disabled:opacity-50"
+                            >
+                                <Send className="w-5 h-5" />
+                            </button>
+                        )}
+                    </form>
+                </div>
+            )}
         </div>
     )
 }
