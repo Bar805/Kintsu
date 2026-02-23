@@ -15,14 +15,19 @@ function getAdminClient() {
 
 // ─── Helper: Call Gemini ─────────────────────────────────────────────────────
 
-async function callGemini(systemPrompt: string, userPrompt: string): Promise<string> {
+async function callGemini(systemPrompt: string, userPrompt: string, schema?: any): Promise<string> {
     const apiKey = process.env.GOOGLE_API_KEY
     if (!apiKey) throw new Error('GOOGLE_API_KEY not set')
 
     const body = JSON.stringify({
         system_instruction: { parts: [{ text: systemPrompt }] },
         contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
-        generationConfig: { temperature: 0.9, maxOutputTokens: 1024 },
+        generationConfig: {
+            temperature: 0.9,
+            maxOutputTokens: 1024,
+            responseMimeType: 'application/json',
+            ...(schema ? { responseSchema: schema } : {})
+        },
     })
 
     // Retry with backoff for rate limits
@@ -51,9 +56,9 @@ async function callGemini(systemPrompt: string, userPrompt: string): Promise<str
             console.error('[chat-suggestions] Valid JSON check failed. Raw response:', text)
             throw new Error(`Gemini response not valid JSON: ${e instanceof Error ? e.message : String(e)}`)
         }
-        const raw = data?.candidates?.[0]?.content?.parts?.[0]?.text || ''
-        // Strip markdown fencing if present
-        return raw.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
+        let innerText = data?.candidates?.[0]?.content?.parts?.[0]?.text
+        if (!innerText) throw new Error('No response from AI')
+        return innerText
     }
 
     throw new Error('Gemini API rate limited after 3 retries')
@@ -70,14 +75,6 @@ Rules:
 - Choose places relevant to what they've been talking about
 - Include the city/area if mentioned in conversation
 - Keep the message warm and natural
-- Output JSON only, no markdown:
-{
-  "message": "Your encouraging message about them meeting up",
-  "places": [
-    {"name": "Place Name", "category": "Activity/Coffee/Food/etc", "mapsQuery": "Place Name City State"},
-    {"name": "Place Name 2", "category": "Category", "mapsQuery": "Place Name 2 City State"}
-  ]
-}
 `
 
 export interface MeetupPlace {
@@ -136,9 +133,30 @@ export async function generateMeetupSuggestion(
     ).join('\n') || ''
 
     try {
+        const meetupSchema = {
+            type: "OBJECT",
+            properties: {
+                message: { type: "STRING" },
+                places: {
+                    type: "ARRAY",
+                    items: {
+                        type: "OBJECT",
+                        properties: {
+                            name: { type: "STRING" },
+                            category: { type: "STRING" },
+                            mapsQuery: { type: "STRING" }
+                        },
+                        required: ["name", "category", "mapsQuery"]
+                    }
+                }
+            },
+            required: ["message", "places"]
+        }
+
         const raw = await callGemini(
             MEETUP_PROMPT,
-            `Profiles:\n${profileInfo}\n\nRecent chat:\n${chatLog}`
+            `Profiles:\n${profileInfo}\n\nRecent chat:\n${chatLog}`,
+            meetupSchema
         )
         const parsed = JSON.parse(raw) as MeetupSuggestion
 

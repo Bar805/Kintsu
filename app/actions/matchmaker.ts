@@ -50,12 +50,6 @@ STRICT RULES:
 
 Count your replies in the conversation history to know which reply number you're on.
 If this is already your 3rd (or later) reply, you MUST set readyToSearch to true.
-
-Output JSON only, no markdown:
-{
-  "reply": "your conversational message",
-  "readyToSearch": false
-}
 `
 
 const MATCH_SYSTEM_PROMPT = `
@@ -72,13 +66,6 @@ Pick the BEST single match. Consider personality compatibility, shared interests
 Write a matchReason shown on a card to the matched person. Use exactly 3 SHORT bullet points (max 8 words each). Be punchy and specific, not generic. Example: "• Both obsessed with sourdough\n• You're the climbing partner they need\n• Shared love of late-night philosophy"
 
 Also write an intro_message that Kintsu would post in the group chat once both people accept. It should introduce them to each other and mention what they have in common. Be casual and fun.
-
-Output JSON only, no markdown:
-{
-  "matchId": "the UUID of the best candidate",
-  "matchReason": "• Bullet 1\\n• Bullet 2\\n• Bullet 3",
-  "introMessage": "Hey [Name1] and [Name2], I connected you because..."
-}
 `
 
 // ─── Helper: Get Admin Supabase Client ───────────────────────────────────────

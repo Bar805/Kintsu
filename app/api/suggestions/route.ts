@@ -69,8 +69,6 @@ Rules:
 - Sound natural and conversational, like a real first message — not formal
 - Draw on any shared interests or profile details if available
 - One can be playful/curious, the other more warm/genuine
-- Output JSON only, no markdown:
-{"suggestions": ["message 1", "message 2"]}
 `
 
 const REPLY_PROMPT = `
@@ -84,8 +82,6 @@ Rules:
 - If the user has few prior messages, default to natural and conversational
 - One can be playful/fun, the other more genuine/sincere
 - Don't repeat what was already said
-- Output JSON only, no markdown:
-{"suggestions": ["suggestion 1", "suggestion 2"]}
 `
 
 // ─── GET /api/suggestions?conversationId=xxx ──────────────────────────────────

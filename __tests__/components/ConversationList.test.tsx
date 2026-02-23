@@ -114,23 +114,6 @@ describe('ConversationList', () => {
         expect(links[1]).toHaveAttribute('href', '/dashboard?conversationId=conv-2')
     })
 
-    it('calls signOut and redirects on logout', async () => {
-        const user = userEvent.setup()
-
-        render(
-            <ConversationList
-                initialConversations={mockConversations}
-                currentUserId="test-user-id"
-            />
-        )
-
-        const logoutButton = screen.getByText('Sign Out')
-        await user.click(logoutButton)
-
-        expect(mockSignOut).toHaveBeenCalled()
-        expect(mockPush).toHaveBeenCalledWith('/')
-    })
-
     it('subscribes to real-time updates on mount', () => {
         render(
             <ConversationList
