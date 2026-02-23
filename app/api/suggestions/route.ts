@@ -181,14 +181,14 @@ export async function GET(req: NextRequest) {
         }
 
         console.log('[suggestions] Gemini raw:', raw)
-        // Sanitize literal newlines that Gemini occasionally emits unescaped
-        const sanitized = raw.replace(/\n/g, '\\n').replace(/\r/g, '\\r')
+        // Sanitize literal newlines that Gemini occasionally emits unescaped inside strings
+        const sanitized = raw.replace(/"(?:[^"\\]|\\.)*"/g, m => m.replace(/\n/g, '\\n').replace(/\r/g, '\\r'))
 
         try {
             const parsed = JSON.parse(sanitized)
             return NextResponse.json({ suggestions: parsed.suggestions?.slice(0, 2) || [] })
         } catch (parseErr) {
-            console.error('[suggestions] Cleaned JSON parse failed:', parseErr, '\\nSanitized payload:', sanitized)
+            console.error('[suggestions] Cleaned JSON parse failed:', parseErr, '\nSanitized payload:', sanitized)
             return NextResponse.json({ suggestions: [] })
         }
     } catch (err) {

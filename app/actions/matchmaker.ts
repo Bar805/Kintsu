@@ -274,7 +274,7 @@ export async function chatWithMatchmaker(
         }
 
         const raw = await callGemini(CHAT_SYSTEM_PROMPT, history, chatSchema)
-        const sanitized = raw.replace(/\n/g, '\\n').replace(/\r/g, '\\r')
+        const sanitized = raw.replace(/"(?:[^"\\]|\\.)*"/g, m => m.replace(/\n/g, '\\n').replace(/\r/g, '\\r'))
         const parsed = JSON.parse(sanitized) as ChatAIResponse
 
         // Update history with AI reply
@@ -416,7 +416,7 @@ export async function findMatch(requestId: string): Promise<void> {
         }
 
         const raw = await callGemini(filledPrompt, [], matchSchema)
-        const sanitized = raw.replace(/\n/g, '\\n').replace(/\r/g, '\\r')
+        const sanitized = raw.replace(/"(?:[^"\\]|\\.)*"/g, m => m.replace(/\n/g, '\\n').replace(/\r/g, '\\r'))
         const parsed = JSON.parse(sanitized) as MatchAIResponse
 
         // Verify the matched ID exists in candidates

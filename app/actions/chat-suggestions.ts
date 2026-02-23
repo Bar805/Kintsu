@@ -158,7 +158,7 @@ export async function generateMeetupSuggestion(
             `Profiles:\n${profileInfo}\n\nRecent chat:\n${chatLog}`,
             meetupSchema
         )
-        const sanitized = raw.replace(/\n/g, '\\n').replace(/\r/g, '\\r')
+        const sanitized = raw.replace(/"(?:[^"\\]|\\.)*"/g, m => m.replace(/\n/g, '\\n').replace(/\r/g, '\\r'))
         const parsed = JSON.parse(sanitized) as MeetupSuggestion
 
         // Mark meetup as suggested
