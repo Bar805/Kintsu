@@ -192,33 +192,6 @@ export default function ProfilePage({ profile, requireSetup }: ProfileFormProps)
                         <div className="text-sm font-bold text-charcoal">Complete Profile</div>
                     )}
 
-                    {/* Avatar */}
-                    <div
-                        className="relative cursor-pointer group"
-                        onClick={() => fileInputRef.current?.click()}
-                    >
-                        <div className="p-0.5 rounded-full border-2 border-rust">
-                            <div className="w-10 h-10 bg-cream rounded-full flex items-center justify-center overflow-hidden">
-                                {isUploading ? (
-                                    <Loader2 size={16} className="animate-spin text-rust" />
-                                ) : profile.avatar_url ? (
-                                    <img src={profile.avatar_url} alt="" className="w-full h-full object-cover" />
-                                ) : (
-                                    <User size={16} className="text-gray-400" />
-                                )}
-                            </div>
-                        </div>
-                        <div className="absolute -bottom-0.5 -right-0.5 bg-white p-1 rounded-full shadow-sm text-gray-400 group-hover:text-rust transition-colors border border-sand">
-                            <Camera size={10} />
-                        </div>
-                        <input
-                            type="file"
-                            ref={fileInputRef}
-                            className="hidden"
-                            accept="image/*"
-                            onChange={handleImageUpload}
-                        />
-                    </div>
                 </div>
 
                 {/* Step Progress */}
@@ -271,6 +244,39 @@ export default function ProfilePage({ profile, requireSetup }: ProfileFormProps)
                                 {/* STEP 0: Basics */}
                                 {currentStep === 0 && (
                                     <div className="space-y-6">
+                                        {/* Avatar Upload Container */}
+                                        <div className="flex flex-col items-center justify-center pb-4">
+                                            <div
+                                                className="relative cursor-pointer group"
+                                                onClick={() => fileInputRef.current?.click()}
+                                            >
+                                                <div className="p-1 rounded-full border-2 border-rust shadow-sm group-hover:shadow-md transition-all">
+                                                    <div className="w-24 h-24 bg-cream rounded-full flex items-center justify-center overflow-hidden">
+                                                        {isUploading ? (
+                                                            <Loader2 size={24} className="animate-spin text-rust" />
+                                                        ) : profile.avatar_url ? (
+                                                            <img src={profile.avatar_url} alt="" className="w-full h-full object-cover" />
+                                                        ) : (
+                                                            <User size={32} className="text-gray-400" />
+                                                        )}
+                                                    </div>
+                                                </div>
+                                                <div className="absolute bottom-0 right-0 bg-white p-2 text-charcoal rounded-full shadow-md border border-sand group-hover:text-rust transition-colors">
+                                                    <Camera size={16} />
+                                                </div>
+                                                <input
+                                                    type="file"
+                                                    ref={fileInputRef}
+                                                    className="hidden"
+                                                    accept="image/*"
+                                                    onChange={handleImageUpload}
+                                                />
+                                            </div>
+                                            <p className="text-xs font-bold text-gray-400 mt-4 uppercase tracking-widest">
+                                                Profile Photo
+                                            </p>
+                                        </div>
+
                                         <div className="space-y-1">
                                             <h2 className="text-xl font-bold text-charcoal">The Basics</h2>
                                             <p className="text-sm text-gray-400">Let&apos;s start simple.</p>
