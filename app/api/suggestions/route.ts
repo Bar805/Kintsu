@@ -12,7 +12,6 @@ async function callGemini(systemPrompt: string, userPrompt: string): Promise<str
         contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
         generationConfig: {
             temperature: 0.9,
-            maxOutputTokens: 512,
             responseMimeType: "application/json",
             responseSchema: {
                 type: "OBJECT",
