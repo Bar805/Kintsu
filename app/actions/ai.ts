@@ -127,7 +127,7 @@ export async function generateTrioResponse(conversationId: string, profiles?: Us
     const profileContext = activeProfiles.map(p => `
     [User: ${p.first_name}]
     - Bio: "${p.bio}"
-    - Interests: ${p.interests.join(', ')}
+    - Interests: ${(p.interests || []).join(', ')}
     `).join('\n')
 
     const conversationScript = messages.map(m =>
