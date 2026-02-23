@@ -65,27 +65,83 @@ async function callGemini(systemPrompt: string, userPrompt: string, schema?: any
 
 // ─── 1. Generate Meetup Suggestion ──────────────────────────────────────────
 
-const MEETUP_PROMPT = `
-You are Kintsu, a social AI connecting people.
-Both users have expressed interest in meeting. Based on their conversation topics, suggest 2 real places/activities where they could meet.
+// Stage 1 prompt: Extract search queries from the conversation
+const MEETUP_SEARCH_PROMPT = `
+You are Kintsu, a social AI. Analyze the conversation between two users and extract what kind of places they might enjoy meeting at.
 
 Rules:
-- Pick REAL places that exist (restaurants, parks, climbing gyms, coffee shops, etc.)
-- Choose places relevant to what they've been talking about
-- Include the city/area if mentioned in conversation
-- Keep the message warm and natural
+- Generate exactly 2 specific Google Maps search queries based on their interests and conversation topics
+- If a city, neighborhood, or area is mentioned, include it in locationContext
+- If no location is mentioned, set locationContext to an empty string
+- Queries should be specific activity types (e.g. "bouldering gym", "board game cafe", "jazz bar") not generic ("fun place")
+`
+
+// Stage 3 prompt: Synthesize the final message using verified venues
+const MEETUP_SYNTHESIZE_PROMPT = `
+You are Kintsu, a social AI connecting people.
+Both users have expressed interest in meeting. You have been given VERIFIED, real places from Google Maps.
+
+Rules:
+- Write a warm, natural message suggesting these specific venues
+- Reference the actual venue names provided to you
+- Do NOT invent or suggest any places that are not in the provided venue list
+- Keep the message concise and fun
 `
 
 export interface MeetupPlace {
     name: string
     category: string
     mapsQuery: string
+    googleMapsUri?: string
+    address?: string
 }
 
 export interface MeetupSuggestion {
     message: string
     places: MeetupPlace[]
 }
+
+// ─── Helper: Resolve venue via Google Places API ────────────────────────────
+
+async function resolveVenueWithPlacesAPI(
+    query: string
+): Promise<{ displayName: string; formattedAddress: string; googleMapsUri: string; primaryType: string } | null> {
+    const apiKey = process.env.GOOGLE_API_KEY
+    if (!apiKey) return null
+
+    try {
+        const res = await fetch('https://places.googleapis.com/v1/places:searchText', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Goog-Api-Key': apiKey,
+                'X-Goog-FieldMask': 'places.displayName,places.formattedAddress,places.googleMapsUri,places.primaryType',
+            },
+            body: JSON.stringify({ textQuery: query }),
+        })
+
+        if (!res.ok) {
+            console.error('[places-api] HTTP error:', res.status, await res.text())
+            return null
+        }
+
+        const data = await res.json()
+        const place = data.places?.[0]
+        if (!place) return null
+
+        return {
+            displayName: place.displayName?.text || '',
+            formattedAddress: place.formattedAddress || '',
+            googleMapsUri: place.googleMapsUri || '',
+            primaryType: place.primaryType || '',
+        }
+    } catch (err) {
+        console.error('[places-api] Fetch failed:', err)
+        return null
+    }
+}
+
+// ─── Main: 3-Stage RAG Pipeline ─────────────────────────────────────────────
 
 export async function generateMeetupSuggestion(
     conversationId: string
@@ -132,33 +188,83 @@ export async function generateMeetupSuggestion(
     ).join('\n') || ''
 
     try {
-        const meetupSchema = {
+        // ── STAGE 1: Extract search queries from conversation ───────────
+        const searchSchema = {
             type: "OBJECT",
             properties: {
-                message: { type: "STRING" },
-                places: {
+                queries: {
                     type: "ARRAY",
-                    items: {
-                        type: "OBJECT",
-                        properties: {
-                            name: { type: "STRING" },
-                            category: { type: "STRING" },
-                            mapsQuery: { type: "STRING" }
-                        },
-                        required: ["name", "category", "mapsQuery"]
-                    }
+                    description: "Exactly 2 specific Google Maps search queries",
+                    items: { type: "STRING" }
+                },
+                locationContext: {
+                    type: "STRING",
+                    description: "City/area mentioned in conversation, or empty string"
                 }
             },
-            required: ["message", "places"]
+            required: ["queries", "locationContext"]
         }
 
-        const raw = await callGemini(
-            MEETUP_PROMPT,
+        const searchRaw = await callGemini(
+            MEETUP_SEARCH_PROMPT,
             `Profiles:\n${profileInfo}\n\nRecent chat:\n${chatLog}`,
-            meetupSchema
+            searchSchema
         )
-        const sanitized = raw.replace(/"(?:[^"\\]|\\.)*"/g, m => m.replace(/\n/g, '\\n').replace(/\r/g, '\\r'))
-        const parsed = JSON.parse(sanitized) as MeetupSuggestion
+        const searchSanitized = searchRaw.replace(/"(?:[^"\\]|\\.)*"/g, m => m.replace(/\n/g, '\\n').replace(/\r/g, '\\r'))
+        const searchResult = JSON.parse(searchSanitized) as { queries: string[]; locationContext: string }
+
+        console.log('[meetup] Stage 1 — search queries:', searchResult)
+
+        // ── STAGE 2: Resolve venues via Google Places API ───────────────
+        const locationSuffix = searchResult.locationContext ? ` in ${searchResult.locationContext}` : ''
+        const placePromises = searchResult.queries.slice(0, 2).map(q =>
+            resolveVenueWithPlacesAPI(`${q}${locationSuffix}`)
+        )
+        const resolvedPlaces = await Promise.all(placePromises)
+
+        // Build verified places array
+        const verifiedPlaces: MeetupPlace[] = resolvedPlaces
+            .filter((p): p is NonNullable<typeof p> => p !== null)
+            .map(p => ({
+                name: p.displayName,
+                category: p.primaryType.replace(/_/g, ' '),
+                mapsQuery: `${p.displayName} ${p.formattedAddress}`,
+                googleMapsUri: p.googleMapsUri,
+                address: p.formattedAddress,
+            }))
+
+        console.log('[meetup] Stage 2 — verified places:', verifiedPlaces.map(p => p.name))
+
+        if (verifiedPlaces.length === 0) {
+            console.warn('[meetup] No venues found via Places API, skipping suggestion')
+            return null
+        }
+
+        // ── STAGE 3: Synthesize final message with verified venues ──────
+        const venueListForAI = verifiedPlaces.map(p =>
+            `- ${p.name} (${p.category}) at ${p.address}`
+        ).join('\n')
+
+        const synthesizeSchema = {
+            type: "OBJECT",
+            properties: {
+                message: { type: "STRING", description: "A warm, fun message suggesting these exact venues" }
+            },
+            required: ["message"]
+        }
+
+        const synthRaw = await callGemini(
+            MEETUP_SYNTHESIZE_PROMPT,
+            `Profiles:\n${profileInfo}\n\nRecent chat:\n${chatLog}\n\nVERIFIED VENUES:\n${venueListForAI}`,
+            synthesizeSchema
+        )
+        const synthSanitized = synthRaw.replace(/"(?:[^"\\]|\\.)*"/g, m => m.replace(/\n/g, '\\n').replace(/\r/g, '\\r'))
+        const synthResult = JSON.parse(synthSanitized) as { message: string }
+
+        const result: MeetupSuggestion = {
+            message: synthResult.message,
+            places: verifiedPlaces,
+        }
 
         // Mark meetup as suggested
         await admin
@@ -167,10 +273,9 @@ export async function generateMeetupSuggestion(
             .eq('id', conversationId)
 
         // Send the meetup message via Trio
-        if (trioId && parsed.message) {
-            // Build the full message with place cards data encoded
-            const placesJson = JSON.stringify(parsed.places)
-            const fullContent = `${parsed.message}\n\n[MEETUP_PLACES]${placesJson}[/MEETUP_PLACES]`
+        if (trioId && result.message) {
+            const placesJson = JSON.stringify(result.places)
+            const fullContent = `${result.message}\n\n[MEETUP_PLACES]${placesJson}[/MEETUP_PLACES]`
 
             await admin
                 .from('messages')
@@ -182,7 +287,7 @@ export async function generateMeetupSuggestion(
                 })
         }
 
-        return parsed
+        return result
     } catch (err) {
         console.error('Failed to generate meetup:', err)
         return null

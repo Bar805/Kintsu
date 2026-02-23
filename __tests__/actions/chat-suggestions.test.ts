@@ -100,19 +100,48 @@ describe('chat suggestions actions', () => {
     })
 
     describe('generateMeetupSuggestion', () => {
-        it('correctly constructs and inserts meetup array card JSON', async () => {
+        it('uses 3-stage RAG pipeline: extract → Places API → synthesize', async () => {
 
-            const expectedInnerJson = {
-                message: "You should meet here!",
-                places: [
-                    { name: "Coffee Place", category: "Coffee", mapsQuery: "Coffee Portland" },
-                    { name: "Climbing Place", category: "Activity", mapsQuery: "Climbing Portland" }
-                ]
+            // Stage 1: Gemini extracts search queries
+            const searchResponse = {
+                queries: ["coffee shop", "climbing gym"],
+                locationContext: "Portland, OR"
             }
 
-            vi.mocked(global.fetch).mockResolvedValueOnce(createGeminiResponse(
-                JSON.stringify(expectedInnerJson)
-            ) as unknown as Response)
+            // Stage 2: Google Places API returns verified venues
+            const placesResponse = {
+                places: [{
+                    displayName: { text: "Stumptown Coffee Roasters" },
+                    formattedAddress: "128 SW 3rd Ave, Portland, OR 97204",
+                    googleMapsUri: "https://maps.google.com/?cid=123456",
+                    primaryType: "coffee_shop"
+                }]
+            }
+
+            // Stage 3: Gemini synthesizes the message
+            const synthResponse = {
+                message: "You two should check out Stumptown Coffee Roasters!"
+            }
+
+            vi.mocked(global.fetch)
+                // Stage 1: Gemini search extraction
+                .mockResolvedValueOnce(createGeminiResponse(
+                    JSON.stringify(searchResponse)
+                ) as unknown as Response)
+                // Stage 2a: Places API call for "coffee shop in Portland, OR"
+                .mockResolvedValueOnce({
+                    ok: true,
+                    json: vi.fn().mockResolvedValue(placesResponse),
+                } as unknown as Response)
+                // Stage 2b: Places API call for "climbing gym in Portland, OR"
+                .mockResolvedValueOnce({
+                    ok: true,
+                    json: vi.fn().mockResolvedValue({ places: [] }),
+                } as unknown as Response)
+                // Stage 3: Gemini synthesis
+                .mockResolvedValueOnce(createGeminiResponse(
+                    JSON.stringify(synthResponse)
+                ) as unknown as Response)
 
             mockClient.from.mockImplementation((table: string) => {
                 if (table === 'messages') {
@@ -144,13 +173,51 @@ describe('chat suggestions actions', () => {
 
             const result = await generateMeetupSuggestion("conv-123")
 
-            // Should properly parse out the array of arrays structure
-            expect(result?.message).toBe("You should meet here!")
-            expect(result?.places.length).toBe(2)
-            expect(result?.places[0].name).toBe("Coffee Place")
+            // Should use the AI-synthesized message
+            expect(result?.message).toBe("You two should check out Stumptown Coffee Roasters!")
 
-            // Should insert a formatted card message via the admin client
+            // Should include the verified place with Google Maps URI
+            expect(result?.places.length).toBe(1)
+            expect(result?.places[0].name).toBe("Stumptown Coffee Roasters")
+            expect(result?.places[0].googleMapsUri).toBe("https://maps.google.com/?cid=123456")
+            expect(result?.places[0].address).toBe("128 SW 3rd Ave, Portland, OR 97204")
+
+            // Should have called Places API
+            expect(vi.mocked(global.fetch)).toHaveBeenCalledWith(
+                'https://places.googleapis.com/v1/places:searchText',
+                expect.objectContaining({ method: 'POST' })
+            )
+
+            // Should insert message via admin client
             expect(mockAdminClient.from).toHaveBeenCalledWith('messages')
+        })
+
+        it('returns null when Places API finds no venues', async () => {
+
+            // Stage 1: Gemini extracts queries
+            vi.mocked(global.fetch)
+                .mockResolvedValueOnce(createGeminiResponse(
+                    JSON.stringify({ queries: ["underwater basket weaving"], locationContext: "" })
+                ) as unknown as Response)
+                // Stage 2: Places API returns nothing
+                .mockResolvedValueOnce({
+                    ok: true,
+                    json: vi.fn().mockResolvedValue({ places: [] }),
+                } as unknown as Response)
+
+            mockClient.from.mockImplementation((table: string) => {
+                if (table === 'messages') {
+                    mockClient._query.mockResult({ data: [{ sender_id: 'other', content: 'hi' }], error: null })
+                } else if (table === 'participants') {
+                    mockClient._query.mockResult({ data: [{ user_id: 'test-user-id' }, { user_id: 'other' }], error: null })
+                } else if (table === 'profiles') {
+                    mockClient._query.mockResult({ data: [{ id: 'test-user-id', first_name: 'Test', interests: [] }], error: null })
+                }
+                return mockClient._query
+            })
+
+            const result = await generateMeetupSuggestion("conv-123")
+            expect(result).toBeNull()
         })
     })
 })

@@ -27,6 +27,8 @@ interface MeetupPlace {
     name: string
     category: string
     mapsQuery: string
+    googleMapsUri?: string
+    address?: string
 }
 
 function parseMeetupPlaces(content: string): { text: string; places: MeetupPlace[] } | null {
@@ -319,14 +321,19 @@ export default function ChatWindow({ conversation, initialMessages, currentUserI
                                                         {meetup.places.map((place, i) => (
                                                             <a
                                                                 key={i}
-                                                                href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(place.mapsQuery)}`}
+                                                                href={place.googleMapsUri || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(place.mapsQuery)}`}
                                                                 target="_blank"
                                                                 rel="noopener noreferrer"
                                                                 className="w-full p-3 bg-white rounded-xl mb-1 last:mb-0 flex justify-between items-center border border-gray-100 hover:border-rust hover:shadow-sm transition-all cursor-pointer group text-left block"
                                                             >
-                                                                <div className="flex flex-col items-start">
-                                                                    <p className="font-bold text-sm text-charcoal">{place.name}</p>
-                                                                    <p className="text-[10px] uppercase opacity-60 text-charcoal">
+                                                                <div className="flex flex-col items-start min-w-0 pr-2">
+                                                                    <p className="font-bold text-sm text-charcoal truncate w-full">{place.name}</p>
+                                                                    {place.address && (
+                                                                        <p className="text-[10px] text-charcoal/60 mt-0.5 truncate w-full">
+                                                                            {place.address}
+                                                                        </p>
+                                                                    )}
+                                                                    <p className="text-[10px] uppercase opacity-60 text-charcoal mt-0.5">
                                                                         {place.category}
                                                                     </p>
                                                                 </div>
