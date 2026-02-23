@@ -48,13 +48,12 @@ async function callGemini(systemPrompt: string, userPrompt: string): Promise<str
             data = JSON.parse(text)
         } catch (e) {
             console.error('[suggestions] Valid JSON check failed. Raw response:', text)
-            // Retry on malformed response? Or just throw.
-            // If it's 429 but returned text body instead of JSON?
-            // Actually continue loop if we want to retry, but for now throw valid error
             throw new Error(`Gemini response not valid JSON (len=${text.length}): ${e instanceof Error ? e.message : String(e)}`)
         }
-        const raw = data?.candidates?.[0]?.content?.parts?.[0]?.text || ''
-        return raw.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
+
+        let innerText = data?.candidates?.[0]?.content?.parts?.[0]?.text
+        if (!innerText) throw new Error('No response from AI')
+        return innerText
     }
     throw new Error('Gemini API rate limited after 3 retries')
 }

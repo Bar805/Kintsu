@@ -93,22 +93,32 @@ function getAdminClient() {
 
 // ─── Helper: Call Gemini API ─────────────────────────────────────────────────
 
-async function callGemini(systemPrompt: string, history: { role: string; content: string }[]): Promise<string> {
+async function callGemini(systemPrompt: string, history: { role: string; content: string }[], schema?: any): Promise<string> {
     const apiKey = process.env.GOOGLE_API_KEY
     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`
 
-    const contents = [
-        { role: 'user', parts: [{ text: systemPrompt }] },
-        ...history.map(m => ({
-            role: m.role === 'user' ? 'user' : 'model',
-            parts: [{ text: m.content }]
-        }))
-    ]
+    const mappedHistory = history.map(m => ({
+        role: m.role === 'user' ? 'user' : 'model',
+        parts: [{ text: m.content || " " }] // Fallback if m.content was somehow saved as undefined
+    }))
 
-    const body = JSON.stringify({
-        contents,
-        generationConfig: { responseMimeType: 'application/json' }
-    })
+    const bodyObj: any = {
+        generationConfig: {
+            responseMimeType: 'application/json',
+            ...(schema ? { responseSchema: schema } : {})
+        }
+    }
+
+    if (mappedHistory.length === 0) {
+        // For findMatch where there's no chat history, send the prompt as the user message
+        bodyObj.contents = [{ role: 'user', parts: [{ text: systemPrompt }] }]
+    } else {
+        // For chatWithMatchmaker, use system_instruction and pass the alternating history
+        bodyObj.system_instruction = { parts: [{ text: systemPrompt }] }
+        bodyObj.contents = mappedHistory
+    }
+
+    const body = JSON.stringify(bodyObj)
 
     // Retry with backoff for rate limits
     for (let attempt = 0; attempt < 3; attempt++) {
@@ -132,6 +142,7 @@ async function callGemini(systemPrompt: string, history: { role: string; content
         }
 
         const text = await response.text()
+        console.log('[matchmaker] raw Gemini response:', text)
         let data
         try {
             data = JSON.parse(text)
@@ -139,9 +150,13 @@ async function callGemini(systemPrompt: string, history: { role: string; content
             console.error('[matchmaker] Valid JSON check failed. Raw response:', text)
             throw new Error(`Gemini response not valid JSON: ${e instanceof Error ? e.message : String(e)}`)
         }
-        const textResponse = data.candidates?.[0]?.content?.parts?.[0]?.text
-        if (!text) throw new Error('No response from AI')
-        return text
+
+        let innerText = data.candidates?.[0]?.content?.parts?.[0]?.text
+        if (!innerText) throw new Error('No response from AI')
+
+        // Gemini structured outputs sometimes return the object as a stringified property
+        // so we just return the raw string and let the caller `JSON.parse` it as normal
+        return innerText
     }
 
     throw new Error('Gemini API rate limited after 3 retries')
@@ -262,7 +277,16 @@ export async function chatWithMatchmaker(
     ]
 
     try {
-        const raw = await callGemini(CHAT_SYSTEM_PROMPT, history)
+        const chatSchema = {
+            type: "OBJECT",
+            properties: {
+                reply: { type: "STRING" },
+                readyToSearch: { type: "BOOLEAN" }
+            },
+            required: ["reply", "readyToSearch"]
+        }
+
+        const raw = await callGemini(CHAT_SYSTEM_PROMPT, history, chatSchema)
         const parsed = JSON.parse(raw) as ChatAIResponse
 
         // Update history with AI reply
@@ -393,7 +417,17 @@ export async function findMatch(requestId: string): Promise<void> {
         .replace('{CANDIDATES_LIST}', candidatesList)
 
     try {
-        const raw = await callGemini(filledPrompt, [])
+        const matchSchema = {
+            type: "OBJECT",
+            properties: {
+                matchId: { type: "STRING" },
+                matchReason: { type: "STRING" },
+                introMessage: { type: "STRING" }
+            },
+            required: ["matchId", "matchReason", "introMessage"]
+        }
+
+        const raw = await callGemini(filledPrompt, [], matchSchema)
         const parsed = JSON.parse(raw) as MatchAIResponse
 
         // Verify the matched ID exists in candidates

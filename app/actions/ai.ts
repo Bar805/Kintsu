@@ -37,7 +37,7 @@ export async function evaluateConversationState(conversationId: string, profiles
         ${TRIO_CONFIG.SCORING_RUBRIC}
 
         CONTEXT (Profiles):
-        ${profiles.map(p => `- ${p.first_name}: ${p.interests.join(', ')}`).join('\n')}
+        ${profiles.map(p => `- ${p.first_name}: ${(p.interests || []).join(', ')}`).join('\n')}
 
         CHAT HISTORY:
         ${messages.map(m => `${m.is_ai_generated ? 'Trio' : 'User'}: ${m.content}`).join('\n')}
