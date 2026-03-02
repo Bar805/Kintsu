@@ -80,6 +80,7 @@ export async function evaluateConversationState(conversationId: string, profiles
 
 
 export async function generateTrioResponse(conversationId: string, profiles?: UserProfile[]): Promise<boolean> {
+    console.log('[ai] generateTrioResponse called for conversation:', conversationId)
     const supabase = await createClient()
 
     let activeProfiles = profiles
@@ -109,7 +110,12 @@ export async function generateTrioResponse(conversationId: string, profiles?: Us
         }
     }
 
-    if (!activeProfiles || activeProfiles.length === 0) return false
+    if (!activeProfiles || activeProfiles.length === 0) {
+        console.log('[ai] No active profiles, aborting generation')
+        return false
+    }
+
+    console.log('[ai] Active profiles:', activeProfiles.map(p => ({ id: p.id, name: p.first_name })))
 
     // 1. Get Full History
     const { data: messagesDesc } = await supabase
@@ -172,6 +178,7 @@ export async function generateTrioResponse(conversationId: string, profiles?: Us
             throw new Error(`API Error: Invalid JSON`)
         }
         const responseText = data.candidates?.[0]?.content?.parts?.[0]?.text || ""
+        console.log('[ai] Generated response text:', responseText ? `"${responseText.substring(0, 100)}..."` : '(empty)')
 
         // 4. Save Response using ADMIN CLIENT (Bypass RLS)
         const trioId = process.env.NEXT_PUBLIC_TRIO_USER_ID
@@ -184,13 +191,22 @@ export async function generateTrioResponse(conversationId: string, profiles?: Us
                 { auth: { autoRefreshToken: false, persistSession: false } }
             )
 
-            await adminSupabase.from('messages').insert({
+            const { data: insertedMessage, error: insertError } = await adminSupabase.from('messages').insert({
                 conversation_id: conversationId,
                 sender_id: trioId,
                 content: responseText,
                 is_ai_generated: true
-            })
+            }).select()
+
+            if (insertError) {
+                console.error('[ai] Failed to insert Trio message:', insertError)
+                return false
+            }
+
+            console.log('[ai] Successfully inserted Trio message:', insertedMessage?.[0]?.id)
             return true
+        } else {
+            console.log('[ai] Empty response text, skipping message insert')
         }
 
     } catch (error) {
