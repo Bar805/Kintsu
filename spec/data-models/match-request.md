@@ -26,6 +26,7 @@ State machine representing a user's search for a match. Stores conversation hist
 | `declined_user_ids` | UUID[] | default `{}` | Users who were proposed but declined |
 | `conversation_history` | jsonb | default `[]` | Array of {role, content} with Kintsu |
 | `match_reason` | text | nullable | 3 bullet points explaining match |
+| `intro_message` | text | nullable | AI-generated intro message for chat |
 | `conversation_id` | UUID | FK to conversations(id) ON DELETE SET NULL, nullable | Created conversation (if accepted) |
 | `created_at` | timestamptz | NOT NULL, default now() | Request creation time |
 | `updated_at` | timestamptz | NOT NULL, default now() | Last update time |
@@ -118,6 +119,11 @@ Example:
   • Both obsessed with sourdough
   • You're the climbing partner they need
   • Shared love of late-night philosophy
+  ```
+
+- **intro_message:** AI-generated warm introduction message addressing both matched users. Generated during `searching` phase by Gemini and posted to the conversation when match is accepted. Example:
+  ```
+  "You two share a love for bouldering and late-night philosophy — I think you'll really vibe!"
   ```
 
 - **declined_user_ids:** Accumulates rejected matches. Used to exclude from future candidate pools. Reset only when new request created.
