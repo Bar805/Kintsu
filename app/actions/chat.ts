@@ -6,6 +6,17 @@ import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { ConversationWithDetails, Message, Participant } from '@/types/database'
 import { evaluateConversationState, generateTrioResponse, UserProfile } from './ai'
 import { generateMeetupSuggestion } from './chat-suggestions'
+import {
+    shouldProcessMessage,
+    bootstrapInterestSaliency,
+    updateSaliency,
+    addToMemory,
+    generateThoughts,
+    evaluateThoughts,
+    selectBestThought,
+    articulateThought,
+    emitResponse
+} from './cognitive-workflow'
 
 export async function getConversations(): Promise<ConversationWithDetails[]> {
     const supabase = await createClient()
@@ -212,29 +223,202 @@ export async function sendMessage(conversationId: string, content: string, id?: 
         console.error('Timer/tracking update error:', e)
     }
 
-    // --- TRIGGER AI EVALUATION ---
+    // --- TRIGGER COGNITIVE WORKFLOW ---
     try {
+        console.log('[cognitive] ========================================')
+        console.log('[cognitive] COGNITIVE WORKFLOW TRIGGERED')
+        console.log('[cognitive] ========================================')
+
+        // Bootstrap interest saliency on first message
+        await bootstrapInterestSaliency(conversationId)
+
+        // Phase 1: Check if we should process this message
+        const messageId = id || '' // Use the message ID we just inserted
+        // Get the actual inserted message ID
+        const { data: insertedMsg } = await supabase
+            .from('messages')
+            .select('id')
+            .eq('conversation_id', conversationId)
+            .eq('sender_id', user.id)
+            .eq('content', content)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .single()
+
+        if (!insertedMsg) {
+            console.log('[cognitive] Could not find inserted message')
+            return true
+        }
+
+        const shouldProcess = await shouldProcessMessage(conversationId, insertedMsg.id)
+        if (!shouldProcess) {
+            console.log('[cognitive] Skipping workflow')
+            return true
+        }
+
+        // Fetch profiles
         const { data: participants } = await supabase
             .from('participants')
             .select('user_id')
             .eq('conversation_id', conversationId)
 
-        if (participants) {
-            const userIds = participants.map(p => p.user_id)
-            const { data: profiles } = await supabase
-                .from('profiles')
-                .select('id, first_name, interests, bio')
-                .in('id', userIds)
+        if (!participants) return true
 
-            if (profiles) {
-                const shouldSpeak = await evaluateConversationState(conversationId, profiles)
-                if (shouldSpeak) {
-                    await generateTrioResponse(conversationId, profiles)
+        const userIds = participants.map(p => p.user_id)
+        const { data: rawProfiles } = await supabase
+            .from('profiles')
+            .select('id, first_name, interests, bio')
+            .in('id', userIds)
+
+        if (!rawProfiles) return true
+
+        const profiles: UserProfile[] = rawProfiles.map(p => ({
+            id: p.id,
+            first_name: p.first_name || 'Unknown',
+            interests: Array.isArray(p.interests) ? p.interests.map(String) : [],
+            bio: p.bio || ''
+        }))
+
+        // Phase 2: Update saliency
+        await updateSaliency(conversationId, content)
+
+        // Phase 3: Add to memory
+        await addToMemory(conversationId, insertedMsg.id, content)
+
+        // Phase 4: Generate thoughts
+        const { thoughts, stimuli } = await generateThoughts(conversationId, insertedMsg.id, profiles)
+
+        // Phase 5: Evaluate thoughts
+        const evaluatedThoughts = await evaluateThoughts(thoughts, conversationId)
+
+        // Save all thoughts (selected and unselected) to database
+        const adminClient = createSupabaseClient(
+            process.env.NEXT_PUBLIC_SUPABASE_URL!,
+            process.env.SUPABASE_SERVICE_ROLE_KEY!,
+            { auth: { autoRefreshToken: false, persistSession: false } }
+        )
+
+        for (const thought of evaluatedThoughts) {
+            const { data: savedThought } = await adminClient
+                .from('trio_thoughts')
+                .insert({
+                    conversation_id: thought.conversation_id,
+                    trigger_message_id: thought.trigger_message_id,
+                    system_type: thought.system_type,
+                    category: thought.category,
+                    content: thought.content,
+                    motivation_score: thought.motivation_score,
+                    base_score: thought.base_score,
+                    evaluation_reasoning: thought.evaluation_reasoning,
+                    was_selected: false // Will be updated if selected
+                })
+                .select()
+                .single()
+
+            // Save stimuli for System 2 thoughts
+            if (thought.system_type === 'system2' && thought.id && savedThought) {
+                const thoughtStimuli = stimuli.get(thought.id) || []
+                if (thoughtStimuli.length > 0) {
+                    const stimuliWithThoughtId = thoughtStimuli.map(s => ({
+                        ...s,
+                        thought_id: savedThought.id
+                    }))
+                    await adminClient
+                        .from('thought_stimuli')
+                        .insert(stimuliWithThoughtId)
                 }
             }
         }
+
+        // Phase 6: Select best thought
+        const selectedThought = await selectBestThought(evaluatedThoughts)
+
+        if (selectedThought) {
+            // Phase 7: Articulate
+            const messageText = await articulateThought(selectedThought, profiles)
+
+            // Phase 8: Emit (simplified - just post message)
+            const trioId = process.env.NEXT_PUBLIC_TRIO_USER_ID
+            if (trioId) {
+                const thoughtStimuli = selectedThought.id ? stimuli.get(selectedThought.id) || [] : []
+
+                // Find the saved thought in database to update it
+                const { data: savedThoughts } = await adminClient
+                    .from('trio_thoughts')
+                    .select('id')
+                    .eq('conversation_id', conversationId)
+                    .eq('trigger_message_id', insertedMsg.id)
+                    .eq('category', selectedThought.category)
+                    .eq('system_type', selectedThought.system_type)
+
+                if (savedThoughts && savedThoughts.length > 0) {
+                    const thoughtId = savedThoughts[0].id
+
+                    // Insert message
+                    const { data: message } = await adminClient
+                        .from('messages')
+                        .insert({
+                            conversation_id: conversationId,
+                            sender_id: trioId,
+                            content: messageText,
+                            is_ai_generated: true,
+                            thought_id: thoughtId,
+                            thought_category: selectedThought.category,
+                            motivation_score: selectedThought.motivation_score
+                        })
+                        .select()
+                        .single()
+
+                    if (message) {
+                        // Update thought record
+                        await adminClient
+                            .from('trio_thoughts')
+                            .update({
+                                was_selected: true,
+                                articulated_message_id: message.id
+                            })
+                            .eq('id', thoughtId)
+
+                        console.log('[cognitive] ✓ WORKFLOW COMPLETE: Trio message posted')
+                    }
+                }
+            }
+        } else {
+            console.log('[cognitive] ✓ WORKFLOW COMPLETE: Trio stays silent (threshold not met)')
+        }
+
+        console.log('[cognitive] ========================================')
+
+
     } catch (e) {
-        console.error('AI trigger error:', e)
+        console.error('[cognitive] ========================================')
+        console.error('[cognitive] WORKFLOW ERROR - Falling back to old system')
+        console.error('[cognitive] ========================================')
+        console.error('[cognitive] Error:', e)
+        // Fall back to old system if cognitive workflow fails
+        try {
+            const { data: participants } = await supabase
+                .from('participants')
+                .select('user_id')
+                .eq('conversation_id', conversationId)
+
+            if (participants) {
+                const userIds = participants.map(p => p.user_id)
+                const { data: profiles } = await supabase
+                    .from('profiles')
+                    .select('id, first_name, interests, bio')
+                    .in('id', userIds)
+
+                if (profiles) {
+                    const shouldSpeak = await evaluateConversationState(conversationId, profiles)
+                    if (shouldSpeak) {
+                        await generateTrioResponse(conversationId, profiles)
+                    }
+                }
+            }
+        } catch (fallbackError) {
+            console.error('[cognitive] Fallback AI error:', fallbackError)
+        }
     }
 
     return true

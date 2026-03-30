@@ -210,181 +210,17 @@ erDiagram
 
 ## Cognitive System Architecture
 
-### Thought Generation Flow
+**See [AI Interjections](../features/ai-interjections.md) for full 8-phase workflow details.**
 
-```mermaid
-flowchart TD
-    Msg[New Message] --> Phase2[Phase 2: Update Saliency]
-    Phase2 --> UpdateInt[Update interest_saliency scores]
-    Phase2 --> UpdateMem[Update message_memory scores]
-
-    UpdateInt --> Phase3[Phase 3: Add to Memory]
-    UpdateMem --> Phase3
-    Phase3 --> CreateMem[Create message_memory record]
-
-    CreateMem --> Phase4[Phase 4: Generate Thoughts]
-    Phase4 --> Sys1[System 1: Quick reaction]
-    Phase4 --> Sys2[System 2: Deliberate]
-
-    Sys1 --> CreateT1[Create 1 trio_thought]
-    Sys2 --> CreateT2[Create 2 trio_thoughts]
-    Sys2 --> CreateStim[Create thought_stimuli<br/>citing interests/messages]
-
-    CreateT1 --> Phase5[Phase 5: Evaluate]
-    CreateT2 --> Phase5
-    CreateStim --> Phase5
-
-    Phase5 --> Score[Score all 3 thoughts]
-    Score --> Phase6{Phase 6: Select<br/>top >= 3.5?}
-
-    Phase6 -->|No| Silent[Stay silent]
-    Phase6 -->|Yes| Phase7[Phase 7: Articulate]
-    Phase7 --> Phase8[Phase 8: Post message]
-    Phase8 --> LinkMsg[Link thought ↔ message]
-```
-
-### Saliency System
-
-```mermaid
-flowchart LR
-    subgraph Bootstrap["On First Message"]
-        Prof[profiles.interests] --> Copy[Copy embeddings]
-        Copy --> IntSal[interest_saliency<br/>saliency = 0.5]
-    end
-
-    subgraph Update["On Every Message"]
-        NewMsg[New message embedding] --> Sim[Compute cosine similarity]
-        OldSal[Old saliency score] --> Decay[× 0.99 decay]
-        Sim --> Boost[Similarity boost]
-        Decay --> Combine[new_score = decay + boost]
-        Boost --> Combine
-        Combine --> IntSal2[Update interest_saliency]
-    end
-
-    subgraph Usage["In System 2"]
-        IntSal2 --> Top5[Top 5 salient interests]
-        Top5 --> Thought[System 2 thought generation]
-    end
-```
+**Summary:** New message → Update saliency → Add to memory → Generate thoughts (System 1 + System 2) → Evaluate → Select if score >= 3.5 → Articulate → Post message
 
 ---
 
 ## Generating Database Diagrams
 
-### Option 1: Mermaid (Recommended - Native Rendering)
+The diagrams above use [Mermaid](https://mermaid.js.org/), which renders automatically in GitHub, GitLab, VS Code, and many documentation tools. **No setup required** - diagrams render directly in markdown viewers.
 
-The diagrams above use [Mermaid](https://mermaid.js.org/), which renders automatically in:
-
-- GitHub
-- GitLab
-- VS Code (with extension)
-- Many documentation tools
-
-**No setup required** - diagrams render directly in markdown viewers.
-
----
-
-### Option 2: dbdiagram.io (Interactive, Shareable)
-
-**Website:** https://dbdiagram.io/
-
-**Copy this DBML code** to generate an interactive ER diagram:
-
-```dbml
-// Core Tables
-Table profiles {
-  id uuid [pk]
-  email text [unique, not null]
-  first_name text [not null]
-  last_name text [not null]
-  avatar_url text [not null]
-  bio text
-  interests text[]
-  interests_embeddings vector_768[]
-  bio_embedding vector_768
-}
-
-Table conversations {
-  id uuid [pk]
-  timer_expires_at timestamptz
-  is_active boolean [not null, default: true]
-  interested_user_ids uuid[]
-  meetup_suggested boolean [default: false]
-}
-
-Table participants {
-  id uuid [pk]
-  conversation_id uuid [not null, ref: > conversations.id]
-  user_id uuid [not null, ref: > profiles.id]
-}
-
-Table messages {
-  id uuid [pk]
-  conversation_id uuid [not null, ref: > conversations.id]
-  sender_id uuid [not null, ref: > profiles.id]
-  content text [not null]
-  is_ai_generated boolean [default: false]
-  thought_id uuid [ref: > trio_thoughts.id]
-  thought_category text
-  motivation_score decimal
-}
-
-Table match_requests {
-  id uuid [pk]
-  requester_id uuid [not null, ref: > profiles.id]
-  candidate_id uuid [not null, ref: > profiles.id]
-  status text [not null]
-  expires_at timestamptz
-}
-
-// Cognitive AI Tables
-Table trio_thoughts {
-  id uuid [pk]
-  conversation_id uuid [not null, ref: > conversations.id]
-  trigger_message_id uuid [not null, ref: > messages.id]
-  system_type system_type [not null]
-  category text [not null]
-  content text [not null]
-  motivation_score decimal [not null]
-  was_selected boolean [default: false]
-  articulated_message_id uuid [ref: > messages.id]
-}
-
-Table thought_stimuli {
-  id uuid [pk]
-  thought_id uuid [not null, ref: > trio_thoughts.id]
-  stimulus_type stimulus_type [not null]
-  stimulus_ref_id uuid
-  stimulus_text text
-  saliency_score decimal [not null]
-}
-
-Table interest_saliency {
-  id uuid [pk]
-  conversation_id uuid [not null, ref: > conversations.id]
-  user_id uuid [not null, ref: > profiles.id]
-  interest_text text [not null]
-  saliency_score decimal [default: 0.5]
-  embedding vector_768 [not null]
-}
-
-Table message_memory {
-  id uuid [pk]
-  conversation_id uuid [not null, ref: > conversations.id]
-  message_id uuid [unique, not null, ref: > messages.id]
-  interpretation text [not null]
-  saliency_score decimal [default: 1.0]
-  embedding vector_768 [not null]
-}
-```
-
-**Steps:**
-
-1. Go to https://dbdiagram.io/
-2. Click "New Diagram"
-3. Paste the DBML code above
-4. Click "Auto Arrange" for clean layout
-5. Export as PNG/SVG/PDF
+For interactive diagrams, use [dbdiagram.io](https://dbdiagram.io/) with DBML export.
 
 ---
 
@@ -418,6 +254,6 @@ All tables enforce participant-only access via RLS policies. Admin client bypass
 
 ## See Also
 
-- [ADAPTATION_PLAN.md](../ai_mediator_flow/ADAPTATION_PLAN.md) - Full cognitive workflow specification
+- [AI Interjections](../features/ai-interjections.md) - Full cognitive workflow specification
 - [Supabase Patterns](../infrastructure/supabase-patterns.md) - Database access patterns
 - [AI Integration](../infrastructure/ai-integration.md) - Gemini API patterns
