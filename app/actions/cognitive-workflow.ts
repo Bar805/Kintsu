@@ -3,6 +3,8 @@
 import { createClient } from '@/utils/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { TRIO_CONFIG } from '@/lib/trio-config'
+import { getCognitiveConfig } from '@/lib/cognitive-config'
+import { loadPrompt, formatMessages, formatProfiles } from '@/lib/prompt-loader'
 
 // ============================================================================
 // TYPES
@@ -133,6 +135,7 @@ function cosineSimilarity(a: number[], b: number[]): number {
 }
 
 export async function updateSaliency(conversationId: string, messageContent: string): Promise<void> {
+  const config = getCognitiveConfig()
   const adminClient = createAdminClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
@@ -142,18 +145,18 @@ export async function updateSaliency(conversationId: string, messageContent: str
   console.log('[cognitive] Phase 2: Computing message embedding')
   const messageEmbedding = await computeEmbedding(messageContent)
 
-  // Update interest saliency (decay = 0.99)
+  // Update interest saliency (decay = config.INTEREST_DECAY)
   const { data: interests } = await adminClient
     .from('interest_saliency')
     .select('*')
     .eq('conversation_id', conversationId)
 
   if (interests && interests.length > 0) {
-    console.log(`[cognitive] Phase 2: Updating ${interests.length} interest saliency scores (decay=0.99)`)
+    console.log(`[cognitive] Phase 2: Updating ${interests.length} interest saliency scores (decay=${config.INTEREST_DECAY})`)
     for (const interest of interests) {
       const embedding = interest.embedding as number[]
       const similarity = cosineSimilarity(messageEmbedding, embedding)
-      const newScore = (interest.saliency_score * 0.99) + similarity
+      const newScore = (interest.saliency_score * config.INTEREST_DECAY) + similarity
 
       await adminClient
         .from('interest_saliency')
@@ -165,18 +168,18 @@ export async function updateSaliency(conversationId: string, messageContent: str
     }
   }
 
-  // Update message memory saliency (decay = 0.95)
+  // Update message memory saliency (decay = config.MESSAGE_DECAY)
   const { data: memories } = await adminClient
     .from('message_memory')
     .select('*')
     .eq('conversation_id', conversationId)
 
   if (memories && memories.length > 0) {
-    console.log(`[cognitive] Phase 2: Updating ${memories.length} message memory saliency scores (decay=0.95)`)
+    console.log(`[cognitive] Phase 2: Updating ${memories.length} message memory saliency scores (decay=${config.MESSAGE_DECAY})`)
     for (const memory of memories) {
       const embedding = memory.embedding as number[]
       const similarity = cosineSimilarity(messageEmbedding, embedding)
-      const newScore = (memory.saliency_score * 0.95) + similarity
+      const newScore = (memory.saliency_score * config.MESSAGE_DECAY) + similarity
 
       await adminClient
         .from('message_memory')
@@ -199,23 +202,15 @@ async function generateInterpretation(messageContent: string, senderName: string
   const apiKey = process.env.GOOGLE_API_KEY
   const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`
 
-  const prompt = `
-Analyze this message and provide a semantic interpretation extracting deeper meaning:
+  const recentContext = recentMessages
+    .map((m, idx) => `${idx + 1}. **${m.is_ai_generated ? 'Trio' : 'User'}**: "${m.content}"`)
+    .join('\n')
 
-Message: "${messageContent}"
-Sender: ${senderName}
-
-Recent context:
-${recentMessages.map(m => `${m.is_ai_generated ? 'Trio' : 'User'}: ${m.content}`).join('\n')}
-
-Extract:
-- Emotional tone (enthusiastic, hesitant, awkward, etc.)
-- Connection signals (showing interest, asking questions)
-- Friction points (confusion, disagreement, topic mismatch)
-- Interest mentions (explicit or implicit references to hobbies/activities)
-
-Provide a brief (1-2 sentence) interpretation.
-`
+  const prompt = await loadPrompt('message-interpretation.md', {
+    SENDER_NAME: senderName,
+    MESSAGE_CONTENT: messageContent,
+    RECENT_MESSAGES: recentContext
+  })
 
   const response = await fetch(url, {
     method: 'POST',
@@ -232,6 +227,7 @@ Provide a brief (1-2 sentence) interpretation.
 }
 
 export async function addToMemory(conversationId: string, messageId: string, messageContent: string): Promise<void> {
+  const config = getCognitiveConfig()
   const adminClient = createAdminClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
@@ -256,7 +252,7 @@ export async function addToMemory(conversationId: string, messageId: string, mes
     .select('content, is_ai_generated')
     .eq('conversation_id', conversationId)
     .order('created_at', { ascending: false })
-    .limit(3)
+    .limit(config.SYSTEM1_CONTEXT_MESSAGES)
 
   console.log('[cognitive] Phase 3: Generating interpretation')
   const interpretation = await generateInterpretation(
@@ -270,7 +266,7 @@ export async function addToMemory(conversationId: string, messageId: string, mes
   const combinedText = `${messageContent} | ${interpretation}`
   const embedding = await computeEmbedding(combinedText)
 
-  // Check rolling window (keep last 10)
+  // Check rolling window (keep last N based on config)
   const { data: memoryCount } = await adminClient
     .from('message_memory')
     .select('id', { count: 'exact', head: true })
@@ -278,7 +274,7 @@ export async function addToMemory(conversationId: string, messageId: string, mes
 
   const count = (memoryCount as any)?.length || 0
 
-  if (count >= 10) {
+  if (count >= config.MEMORY_WINDOW_SIZE) {
     // Delete oldest
     const { data: oldest } = await adminClient
       .from('message_memory')
@@ -315,31 +311,26 @@ export async function addToMemory(conversationId: string, messageId: string, mes
 // ============================================================================
 
 async function generateSystem1Thought(conversationId: string, triggerMessageId: string): Promise<Thought> {
+  const config = getCognitiveConfig()
   const supabase = await createClient()
   const apiKey = process.env.GOOGLE_API_KEY
   const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`
 
-  // Get last 3 messages only
+  // Get last N messages based on config
   const { data: messages } = await supabase
     .from('messages')
     .select('content, is_ai_generated')
     .eq('conversation_id', conversationId)
     .order('created_at', { ascending: false })
-    .limit(3)
+    .limit(config.SYSTEM1_CONTEXT_MESSAGES)
 
-  const prompt = `
-You are Trio's System 1 (fast, intuitive reaction). Generate ONE quick thought based on immediate conversation patterns.
+  const messagesContext = messages?.reverse()
+    .map((m, idx) => `${idx + 1}. **${m.is_ai_generated ? 'Trio' : 'User'}**: "${m.content}"`)
+    .join('\n') || ''
 
-Recent messages:
-${messages?.reverse().map(m => `${m.is_ai_generated ? 'Trio' : 'User'}: ${m.content}`).join('\n')}
-
-Generate a brief (< 15 words) thought in one of these categories:
-- encouragement: Positive reinforcement
-- connection: Quick connection opportunity
-- friction_reduction: Notice awkward silence
-
-Return JSON: { "category": "encouragement" | "connection" | "friction_reduction", "content": "your thought" }
-`
+  const prompt = await loadPrompt('system1-generation.md', {
+    MESSAGES: messagesContext
+  })
 
   const response = await fetch(url, {
     method: 'POST',
@@ -348,7 +339,7 @@ Return JSON: { "category": "encouragement" | "connection" | "friction_reduction"
       contents: [{ parts: [{ text: prompt }] }],
       generationConfig: {
         responseMimeType: "application/json",
-        temperature: 0.8
+        temperature: config.SYSTEM1_TEMPERATURE
       }
     })
   })
@@ -374,6 +365,7 @@ Return JSON: { "category": "encouragement" | "connection" | "friction_reduction"
 }
 
 async function generateSystem2Thoughts(conversationId: string, triggerMessageId: string, profiles: UserProfile[]): Promise<{ thoughts: Thought[], stimuli: Map<string, ThoughtStimulus[]> }> {
+  const config = getCognitiveConfig()
   const adminClient = createAdminClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
@@ -383,53 +375,52 @@ async function generateSystem2Thoughts(conversationId: string, triggerMessageId:
   const apiKey = process.env.GOOGLE_API_KEY
   const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`
 
-  // Get last 5 messages
+  // Get last N messages based on config
   const { data: messages } = await adminClient
     .from('messages')
     .select('id, content, is_ai_generated')
     .eq('conversation_id', conversationId)
     .order('created_at', { ascending: false })
-    .limit(5)
+    .limit(config.SYSTEM2_CONTEXT_MESSAGES)
 
-  // Get top 5 salient interests
+  // Get top K salient interests based on config
   const { data: interests } = await adminClient
     .from('interest_saliency')
     .select('id, interest_text, saliency_score, user_id')
     .eq('conversation_id', conversationId)
     .order('saliency_score', { ascending: false })
-    .limit(5)
+    .limit(config.SYSTEM2_TOP_INTERESTS)
 
-  // Get top 3 salient previous thoughts
+  // Get top K salient previous thoughts based on config
   const { data: prevThoughts } = await adminClient
     .from('trio_thoughts')
     .select('id, content, motivation_score')
     .eq('conversation_id', conversationId)
     .order('created_at', { ascending: false })
-    .limit(3)
+    .limit(config.SYSTEM2_TOP_THOUGHTS)
 
-  const prompt = `
-You are Trio's System 2 (deliberate, memory-based). Generate TWO diverse thoughts.
+  const profilesContext = profiles
+    .map(p => `**${p.first_name}**\n- Interests: ${p.interests.join(', ')}\n- Bio: ${p.bio}`)
+    .join('\n\n')
 
-USER PROFILES:
-${profiles.map(p => `${p.first_name}: ${p.interests.join(', ')} | Bio: ${p.bio}`).join('\n')}
+  const messagesContext = messages?.reverse()
+    .map((m, idx) => `${idx + 1}. **${m.is_ai_generated ? 'Trio' : 'User'}**: "${m.content}"`)
+    .join('\n') || ''
 
-RECENT MESSAGES:
-${messages?.reverse().map(m => `${m.is_ai_generated ? 'Trio' : 'User'}: ${m.content}`).join('\n')}
+  const interestsContext = interests
+    ?.map((i, idx) => `${idx + 1}. ${i.interest_text} (saliency: ${i.saliency_score.toFixed(2)})`)
+    .join('\n') || 'None'
 
-TOP SALIENT INTERESTS:
-${interests?.map((i, idx) => `INT#${idx + 1} [${i.saliency_score.toFixed(2)}]: ${i.interest_text}`).join('\n')}
+  const thoughtsContext = prevThoughts
+    ?.map((t, idx) => `${idx + 1}. ${t.content}`)
+    .join('\n') || 'None'
 
-PREVIOUS THOUGHTS:
-${prevThoughts?.map((t, idx) => `THOUGHT#${idx + 1}: ${t.content}`).join('\n')}
-
-Generate 2 thoughts in categories: shared_interest, friction_reduction, meetup_nudge, icebreaker
-Each thought should cite 2-5 stimuli (e.g., "INT#1", "MSG#3")
-
-Return JSON array: [
-  { "category": "...", "content": "...", "stimuli": ["INT#1", "MSG#2"] },
-  { "category": "...", "content": "...", "stimuli": ["INT#3"] }
-]
-`
+  const prompt = await loadPrompt('system2-generation.md', {
+    PROFILES: profilesContext,
+    MESSAGES: messagesContext,
+    INTERESTS: interestsContext,
+    PREVIOUS_THOUGHTS: thoughtsContext
+  })
 
   const response = await fetch(url, {
     method: 'POST',
@@ -438,7 +429,7 @@ Return JSON array: [
       contents: [{ parts: [{ text: prompt }] }],
       generationConfig: {
         responseMimeType: "application/json",
-        temperature: 0.5
+        temperature: config.SYSTEM2_TEMPERATURE
       }
     })
   })
@@ -449,7 +440,7 @@ Return JSON array: [
   const thoughts: Thought[] = []
   const stimuliMap = new Map<string, ThoughtStimulus[]>()
 
-  for (const result of results.slice(0, 2)) {
+  for (const result of results.slice(0, config.SYSTEM2_COUNT)) {
     const thoughtId = crypto.randomUUID()
     const thought = {
       id: thoughtId,
@@ -535,6 +526,7 @@ export async function generateThoughts(conversationId: string, triggerMessageId:
 // ============================================================================
 
 async function evaluateThought(thought: Thought, conversationId: string): Promise<{ base_score: number, reasoning: string }> {
+  const config = getCognitiveConfig()
   const supabase = await createClient()
   const apiKey = process.env.GOOGLE_API_KEY
   const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`
@@ -558,34 +550,17 @@ async function evaluateThought(thought: Thought, conversationId: string): Promis
 
   const messagesSinceTrioSpoke = trioMessages && trioMessages.length > 0 ? 5 : 999 // Estimate
 
-  const prompt = `
-Evaluate this thought on Social Facilitation Motivation (1.0-5.0 scale).
+  const messagesContext = messages?.reverse()
+    .map((m, idx) => `${idx + 1}. **${m.is_ai_generated ? 'Trio' : 'User'}**: "${m.content}"`)
+    .join('\n') || ''
 
-THOUGHT: "${thought.content}"
-CATEGORY: ${thought.category}
-SYSTEM TYPE: ${thought.system_type}
-
-CONVERSATION CONTEXT:
-${messages?.reverse().map(m => `${m.is_ai_generated ? 'Trio' : 'User'}: ${m.content}`).join('\n')}
-
-EVALUATION FACTORS:
-1. Connection Relevance (a): Links to both users' profiles/interests?
-2. Friction Severity (b): Addresses social awkwardness/silence?
-3. Timing Urgency (c): Right moment to speak, or can wait?
-4. Conversation Coherence (d): Fits natural flow, or feels forced?
-5. Interjection Balance (e): Trio spoke ${messagesSinceTrioSpoke} messages ago
-
-RATING SCALE:
-1.0 = Stay silent, conversation fine
-2.0 = Minor opportunity, not urgent
-3.0 = Could speak or stay quiet
-4.0 = Strong opportunity, should speak
-5.0 = Critical moment, must intervene
-
-Provide reasoning citing specific factors, then assign score.
-
-Return JSON: { "reasoning": "...", "score": 1.0-5.0 }
-`
+  const prompt = await loadPrompt('thought-evaluation.md', {
+    THOUGHT_CONTENT: thought.content,
+    THOUGHT_CATEGORY: thought.category,
+    SYSTEM_TYPE: thought.system_type,
+    MESSAGES: messagesContext,
+    MESSAGES_SINCE_TRIO_SPOKE: messagesSinceTrioSpoke.toString()
+  })
 
   const response = await fetch(url, {
     method: 'POST',
@@ -594,7 +569,7 @@ Return JSON: { "reasoning": "...", "score": 1.0-5.0 }
       contents: [{ parts: [{ text: prompt }] }],
       generationConfig: {
         responseMimeType: "application/json",
-        temperature: 0.1 // Low temperature for consistent scoring
+        temperature: config.EVALUATION_TEMPERATURE
       }
     })
   })
@@ -614,6 +589,7 @@ Return JSON: { "reasoning": "...", "score": 1.0-5.0 }
 }
 
 export async function evaluateThoughts(thoughts: Thought[], conversationId: string): Promise<Thought[]> {
+  const config = getCognitiveConfig()
   console.log('[cognitive] Phase 5: Evaluating thoughts')
 
   const adminClient = createAdminClient(
@@ -628,9 +604,9 @@ export async function evaluateThoughts(thoughts: Thought[], conversationId: stri
     .select('is_ai_generated')
     .eq('conversation_id', conversationId)
     .order('created_at', { ascending: false })
-    .limit(10)
+    .limit(config.SILENCE_BOOST_THRESHOLD + 5) // Get enough to check both thresholds
 
-  let messagesSinceTrioSpoke = 10
+  let messagesSinceTrioSpoke = config.SILENCE_BOOST_THRESHOLD + 5
   if (messages) {
     for (let i = 0; i < messages.length; i++) {
       if (messages[i].is_ai_generated) {
@@ -645,16 +621,17 @@ export async function evaluateThoughts(thoughts: Thought[], conversationId: stri
     thoughts.map(t => evaluateThought(t, conversationId))
   )
 
-  // Apply balance penalty
+  // Apply balance penalty/boost
   const evaluatedThoughts = thoughts.map((thought, idx) => {
     const { base_score, reasoning } = evaluations[idx]
     let motivation_score = base_score
 
-    // Apply penalty if Trio spoke recently (< 3 messages ago)
-    if (messagesSinceTrioSpoke < 3) {
-      motivation_score *= 0.7 // 30% penalty
-    } else if (messagesSinceTrioSpoke > 10) {
-      motivation_score *= 1.1 // 10% boost
+    // Apply penalty if Trio spoke recently
+    if (messagesSinceTrioSpoke < config.RECENT_SPEECH_THRESHOLD) {
+      motivation_score *= config.BALANCE_PENALTY_MULTIPLIER
+    } else if (messagesSinceTrioSpoke > config.SILENCE_BOOST_THRESHOLD) {
+      // Apply boost if Trio hasn't spoken in a while
+      motivation_score *= config.SILENCE_BOOST_MULTIPLIER
     }
 
     // Clamp to 1.0-5.0
@@ -684,13 +661,14 @@ export async function evaluateThoughts(thoughts: Thought[], conversationId: stri
 // ============================================================================
 
 export async function selectBestThought(thoughts: Thought[]): Promise<Thought | null> {
+  const config = getCognitiveConfig()
   console.log('[cognitive] Phase 6: Selecting best thought')
 
   // Sort by motivation score (descending)
   const sorted = [...thoughts].sort((a, b) => b.motivation_score - a.motivation_score)
 
   const best = sorted[0]
-  const threshold = 3.5
+  const threshold = config.SELECTION_THRESHOLD
 
   if (best.motivation_score >= threshold) {
     console.log(`[cognitive] Phase 6 complete: SELECTED - ${best.category} (${best.system_type}, score=${best.motivation_score.toFixed(2)})`)
@@ -708,48 +686,43 @@ export async function selectBestThought(thoughts: Thought[]): Promise<Thought | 
 // ============================================================================
 
 export async function articulateThought(thought: Thought, profiles: UserProfile[]): Promise<string> {
+  const config = getCognitiveConfig()
   console.log('[cognitive] Phase 7: Articulating thought')
 
   const supabase = await createClient()
   const apiKey = process.env.GOOGLE_API_KEY
   const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`
 
-  // Get last 5 messages for context
+  // Get last N messages for context
   const { data: messages } = await supabase
     .from('messages')
     .select('content, is_ai_generated')
     .eq('conversation_id', thought.conversation_id)
     .order('created_at', { ascending: false })
-    .limit(5)
+    .limit(config.SYSTEM2_CONTEXT_MESSAGES)
 
-  const prompt = `
-${TRIO_CONFIG.SYSTEM_PROMPT}
+  const profilesContext = profiles
+    .map(p => `**${p.first_name}**\n- Interests: ${p.interests.join(', ')}\n- Bio: ${p.bio}`)
+    .join('\n\n')
 
-USER PROFILES:
-${profiles.map(p => `${p.first_name}: ${p.interests.join(', ')} | Bio: ${p.bio}`).join('\n')}
+  const messagesContext = messages?.reverse()
+    .map((m, idx) => `${idx + 1}. **${m.is_ai_generated ? 'Trio' : 'User'}**: "${m.content}"`)
+    .join('\n') || ''
 
-RECENT CONVERSATION:
-${messages?.reverse().map(m => `${m.is_ai_generated ? 'Trio' : 'User'}: ${m.content}`).join('\n')}
-
-INTERNAL THOUGHT: "${thought.content}"
-CATEGORY: ${thought.category}
-
-Convert this internal thought into a natural Trio message:
-- Brief (1-2 sentences max)
-- Casual, punchy language
-- Specific references to profiles when relevant
-- Use emojis sparingly (🔥 for hype, ✨ for connections)
-- Never say "as an AI" or "I'm here to help"
-
-Return ONLY the message text (no JSON, no quotes).
-`
+  const prompt = await loadPrompt('articulation.md', {
+    TRIO_SYSTEM_PROMPT: TRIO_CONFIG.SYSTEM_PROMPT,
+    THOUGHT_CONTENT: thought.content,
+    THOUGHT_CATEGORY: thought.category,
+    PROFILES: profilesContext,
+    MESSAGES: messagesContext
+  })
 
   const response = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: { temperature: 0.7 }
+      generationConfig: { temperature: config.ARTICULATION_TEMPERATURE }
     })
   })
 
@@ -850,6 +823,7 @@ export async function emitResponse(thought: Thought, messageText: string, stimul
 // ============================================================================
 
 export async function bootstrapInterestSaliency(conversationId: string): Promise<void> {
+  const config = getCognitiveConfig()
   const adminClient = createAdminClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
@@ -905,7 +879,7 @@ export async function bootstrapInterestSaliency(conversationId: string): Promise
             conversation_id: conversationId,
             user_id: profile.id,
             interest_text: interest,
-            saliency_score: 0.5, // Neutral initial score
+            saliency_score: config.INITIAL_INTEREST_SALIENCY,
             embedding: emb
           })
       } else {
@@ -915,7 +889,7 @@ export async function bootstrapInterestSaliency(conversationId: string): Promise
             conversation_id: conversationId,
             user_id: profile.id,
             interest_text: interest,
-            saliency_score: 0.5,
+            saliency_score: config.INITIAL_INTEREST_SALIENCY,
             embedding
           })
       }
