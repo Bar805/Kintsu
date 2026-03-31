@@ -1,0 +1,14 @@
+﻿[dotenv@17.3.1] injecting env (5) from .env.local -- tip: ≡ƒ¢í∩╕Å auth for agents: https://vestauth.com
+[
+  {
+    "id": "cab88b30-0558-479a-86d9-561cbad9200e",
+    "conversation_id": "551881fe-d5b1-4873-9d2d-c9db950be89e",
+    "sender_id": "faf2b753-2bdb-413f-91fe-079ed48c50cb",
+    "content": "Alex, rock music! David, what rock tracks keep you focused coding or energized running? Alex, your radio show must be packed with those! Γ£¿",
+    "created_at": "2026-03-30T20:11:42.620574+00:00",
+    "is_ai_generated": true,
+    "thought_id": "e46a7dac-a79a-4220-8691-a5b8fb4472f6",
+    "thought_category": "icebreaker",
+    "motivation_score": 4.2
+  }
+]

@@ -1,0 +1,42 @@
+[
+  {
+    "conv": "50005597-7a87-4d71-b61a-bac12889dbe6",
+    "created": "2026-03-03T19:28:40.938002+00:00",
+    "msg_count": 0,
+    "messages": []
+  },
+  {
+    "conv": "3e5f5f24-dcc1-431d-beb3-33bc7a597619",
+    "created": "2026-02-28T22:22:26.462738+00:00",
+    "msg_count": 14,
+    "messages": [
+      "Hi Jiashu, Alex here! Excited to connect and chat!",
+      "Hey nice to meet you",
+      "I'm really interested in music and I would love to meet someone to play together.",
+      "Cool what instruments do you play? I play bass.",
+      "I love singing and I also know how to play keyboard.",
+      "That's cool what kind of music style are you interested?",
+      "I generally love pop and rock music. My favorite band is One Ok Rock.",
+      "That's something I haven't heard of.",
+      "I think they are pretty popular in both Japan and US",
+      "Can you recommend some songs?",
+      "I like the song Wherever you are",
+      "Are you able to sing it? That guy has a wild voice.",
+      "I am not sure. I can try though.",
+      "Jiashu, trying those vocals? Alex, as a music producer and radio host, you guys need to jam or get this on air!"
+    ]
+  },
+  {
+    "conv": "0372b314-9029-4967-86da-06689e5965de",
+    "created": "2026-02-23T22:11:27.731818+00:00",
+    "msg_count": 6,
+    "messages": [
+      "{\n  \"message\": \"Hey there! We found someone awesome for you to connect with. Looks like you both are on the hunt for a casual gym buddy to hit the weights with! Get ready to spot each other and crush some goals together! 💪\"\n}",
+      "Hi Bar! yeah I'm down to get a new gym buddy",
+      "Awesome! Where do you gym usually?",
+      "I usually hit Payne Whitney! What about you, future spotter?",
+      "Love that energy! Sounds like you're already figuring out the spot to crush some weights. Get ready to spot each other! 💪",
+      "Awesome! Sounds like you're both ready to get moving. How about checking out Powerhouse Gym or City Climb Gym? Both are fantastic spots to meet up and crush some fitness goals!\n\n[MEETUP_PLACES][{\"name\":\"Powerhouse Gym\",\"category\":\"gym\",\"mapsQuery\":\"Powerhouse Gym 31 Bernhard Rd, North Haven, CT 06473, USA\",\"googleMapsUri\":\"https://maps.google.com/?cid=15398883989425929446&g_mp=Cidnb29nbGUubWFwcy5wbGFjZXMudjEuUGxhY2VzLlNlYXJjaFRleHQQAhgEIAA\",\"address\":\"31 Bernhard Rd, North Haven, CT 06473, USA\"},{\"name\":\"City Climb Gym\",\"category\":\"sports activity location\",\"mapsQuery\":\"City Climb Gym 342 Winchester Ave, New Haven, CT 06511, USA\",\"googleMapsUri\":\"https://maps.google.com/?cid=11940356675169451983&g_mp=Cidnb29nbGUubWFwcy5wbGFjZXMudjEuUGxhY2VzLlNlYXJjaFRleHQQAhgEIAA\",\"address\":\"342 Winchester Ave, New Haven, CT 06511, USA\"}][/MEETUP_PLACES]"
+    ]
+  }
+]

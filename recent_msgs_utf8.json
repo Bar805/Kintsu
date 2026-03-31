@@ -1,0 +1,32 @@
+[
+  {
+    "id": "a256e5b3-af85-41bb-b5bc-641e13cc8b9c",
+    "sender_id": "faf2b753-2bdb-413f-91fe-079ed48c50cb",
+    "content": "test",
+    "is_ai_generated": true
+  },
+  {
+    "id": "a7e59445-7083-4f9e-980d-a59ba9e3d63f",
+    "sender_id": "faf2b753-2bdb-413f-91fe-079ed48c50cb",
+    "content": "Jiashu, trying those vocals? Alex, as a music producer and radio host, you guys need to jam or get this on air!",
+    "is_ai_generated": true
+  },
+  {
+    "id": "cd050c14-16b6-42d1-89e7-fa693c186534",
+    "sender_id": "c4902ead-b5f5-4329-9dd1-3404ee3b49c0",
+    "content": "I am not sure. I can try though.",
+    "is_ai_generated": false
+  },
+  {
+    "id": "dd3c2cb9-390b-40c0-b14d-b9e4b2f14556",
+    "sender_id": "c5409f82-2eb7-4707-8bb0-eae8299f3f71",
+    "content": "Are you able to sing it? That guy has a wild voice.",
+    "is_ai_generated": false
+  },
+  {
+    "id": "7b1f65ea-da67-4a01-8c83-4816e539012c",
+    "sender_id": "c4902ead-b5f5-4329-9dd1-3404ee3b49c0",
+    "content": "I like the song Wherever you are",
+    "is_ai_generated": false
+  }
+]

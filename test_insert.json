@@ -1,0 +1,2 @@
+﻿[dotenv@17.3.1] injecting env (5) from .env.local -- tip: ≡ƒöÉ encrypt with Dotenvx: https://dotenvx.com
+{"error":null,"data":[{"id":"6c7b7296-fc32-417c-bd58-d05e816742a8","conversation_id":"867cb03f-2db3-40d0-a72f-3739398b3e17","sender_id":"faf2b753-2bdb-413f-91fe-079ed48c50cb","content":"TEST AI MESSAGE","created_at":"2026-03-31T02:03:54.460964+00:00","is_ai_generated":true,"thought_id":null,"thought_category":null,"motivation_score":null}],"count":null,"status":201,"statusText":"Created"}

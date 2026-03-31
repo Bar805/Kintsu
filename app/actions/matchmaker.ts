@@ -56,7 +56,8 @@ If this is already your 3rd (or later) reply, you MUST set readyToSearch to true
 const MATCH_SYSTEM_PROMPT = `
 You are Kintsu, matching people based on compatibility.
 
-The user described what they're looking for in this conversation:
+The requester's name is {REQUESTER_NAME}.
+They described what they're looking for in this conversation:
 {CONVERSATION_HISTORY}
 
 Here are the available candidates:
@@ -338,6 +339,14 @@ export async function findMatch(requestId: string): Promise<void> {
 
     if (!request || request.status !== 'searching') return
 
+    // Get the requester's name
+    const { data: requesterProfile } = await adminClient
+        .from('profiles')
+        .select('first_name')
+        .eq('id', request.requester_id)
+        .single()
+    const requesterName = requesterProfile?.first_name || 'the requester'
+
     // Get requester's existing conversation partners (to exclude)
     const { data: myParticipations } = await adminClient
         .from('participants')
@@ -402,6 +411,7 @@ export async function findMatch(requestId: string): Promise<void> {
         .join('\n')
 
     const filledPrompt = MATCH_SYSTEM_PROMPT
+        .replace('{REQUESTER_NAME}', requesterName)
         .replace('{CONVERSATION_HISTORY}', conversationText)
         .replace('{CANDIDATES_LIST}', candidatesList)
 
@@ -504,12 +514,13 @@ export async function respondToMatch(
         const introMessage = request.intro_message || "Hey you two! I connected you because I think you'd really hit it off — have fun getting to know each other! 🎉"
 
         // Post intro message from Kintsu
-        if (trioId) {
+        const actualTrioId = process.env.NEXT_PUBLIC_TRIO_USER_ID;
+        if (actualTrioId) {
             const { data: messageData, error: msgError } = await adminClient
                 .from('messages')
                 .insert({
                     conversation_id: conversation.id,
-                    sender_id: trioId,
+                    sender_id: actualTrioId,
                     content: introMessage,
                     is_ai_generated: true,
                 })
@@ -517,11 +528,13 @@ export async function respondToMatch(
 
             if (msgError) {
                 console.error('[matchmaker] Error inserting intro message:', msgError)
+                throw new Error("Could not insert AI intro message");
             } else {
                 console.log('[matchmaker] Intro message sent successfully:', messageData)
             }
         } else {
             console.error('[matchmaker] NEXT_PUBLIC_TRIO_USER_ID not set - cannot send intro message')
+            throw new Error("Missing NEXT_PUBLIC_TRIO_USER_ID configuration");
         }
 
         // Update request status

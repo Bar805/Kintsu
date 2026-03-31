@@ -1,0 +1,105 @@
+diff --git a/app/actions/matchmaker.ts b/app/actions/matchmaker.ts
+index 8a28cd7..1582d0e 100644
+--- a/app/actions/matchmaker.ts
++++ b/app/actions/matchmaker.ts
+@@ -13,6 +13,7 @@ export type MatchRequest = {
+     declined_user_ids: string[]
+     conversation_history: { role: 'user' | 'model'; content: string }[]
+     match_reason: string | null
++    intro_message: string | null
+     conversation_id: string | null
+     created_at: string
+     updated_at: string
+@@ -430,13 +431,14 @@ export async function findMatch(requestId: string): Promise<void> {
+             return
+         }
+ 
+-        // Update request with match
++        // Update request with match (persist introMessage so respondToMatch can reuse it)
+         await adminClient
+             .from('match_requests')
+             .update({
+                 status: 'pending_approval',
+                 matched_user_id: parsed.matchId,
+                 match_reason: parsed.matchReason,
++                intro_message: parsed.introMessage,
+             })
+             .eq('id', requestId)
+ 
+@@ -476,6 +478,7 @@ export async function respondToMatch(
+     if (accepted) {
+         // Create conversation
+         const trioId = process.env.NEXT_PUBLIC_TRIO_USER_ID
++        console.log('[respondToMatch] ACCEPTED — trioId:', trioId, '| request.intro_message:', request.intro_message?.substring(0, 50))
+ 
+         const { data: conversation, error: convError } = await adminClient
+             .from('conversations')
+@@ -487,7 +490,11 @@ export async function respondToMatch(
+             .select()
+             .single()
+ 
+-        if (convError || !conversation) return { success: false, error: 'Failed to create conversation' }
++        if (convError || !conversation) {
++            console.error('[respondToMatch] Failed to create conversation:', convError)
++            return { success: false, error: 'Failed to create conversation' }
++        }
++        console.log('[respondToMatch] Created conversation:', conversation.id)
+ 
+         // Add participants
+         await adminClient
+@@ -497,33 +504,16 @@ export async function respondToMatch(
+                 { conversation_id: conversation.id, user_id: user.id }
+             ])
+ 
+-        // Build intro message from conversation context
+-        const conversationText = request.conversation_history
+-            .map((m: any) => `${m.role === 'user' ? 'User' : 'Kintsu'}: ${m.content}`)
+-            .join('\n')
++        // Use the intro message saved by findMatch, with a sensible fallback
++        const introMessage = (request.intro_message && request.intro_message.trim().length > 0)
++            ? request.intro_message
++            : "Hey you two! I connected you because I think you'd really hit it off — have fun getting to know each other! 🎉"
+ 
+-        // Generate intro message
+-        let introMessage = "Hey you two! I connected you because I think you'd really hit it off — have fun getting to know each other! 🎉"
+-        try {
+-            const introPrompt = `You are Kintsu, a single friend who knows both people. You just matched two people. Write a brief, warm intro message for their chat. Address BOTH of them together (e.g. "You two...", "Both of you..."). Mention what they have in common based on this conversation: ${conversationText}. Never say "we". Speak as Kintsu alone. Keep it to 1-2 sentences. Output just the message text, nothing else.`
+-            const raw = await callGemini(introPrompt, [{ role: 'user', content: 'Generate the intro' }])
+-            // Gemini returns JSON due to responseMimeType — extract the actual text
+-            let cleaned = raw.trim()
+-            try {
+-                const parsed = JSON.parse(cleaned)
+-                // Handle {"message": "..."} or {"text": "..."} or just a plain string
+-                cleaned = parsed.message || parsed.text || parsed.intro || (typeof parsed === 'string' ? parsed : cleaned)
+-            } catch {
+-                // Not JSON, use as-is
+-            }
+-            introMessage = cleaned.replace(/^["']|["']$/g, '').trim()
+-        } catch (e) {
+-            console.error('Intro generation error:', e)
+-        }
++        console.log('[respondToMatch] Inserting intro message, length:', introMessage.length)
+ 
+         // Post intro message from Kintsu
+         if (trioId) {
+-            await adminClient
++            const { data: msgData, error: msgError } = await adminClient
+                 .from('messages')
+                 .insert({
+                     conversation_id: conversation.id,
+@@ -531,6 +521,15 @@ export async function respondToMatch(
+                     content: introMessage,
+                     is_ai_generated: true,
+                 })
++                .select()
++
++            if (msgError) {
++                console.error('[respondToMatch] Failed to insert intro message:', msgError)
++            } else {
++                console.log('[respondToMatch] Intro message inserted successfully:', msgData?.[0]?.id)
++            }
++        } else {
++            console.error('[respondToMatch] NEXT_PUBLIC_TRIO_USER_ID is not set — skipping intro message')
+         }
+ 
+         // Update request status

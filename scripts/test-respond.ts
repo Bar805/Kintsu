@@ -1,0 +1,1 @@
+import { respondToMatch } from '../app/actions/matchmaker'; respondToMatch('e656a551-f1c7-41fc-9d94-17536f6e29ba', true).then(console.log).catch(console.error);

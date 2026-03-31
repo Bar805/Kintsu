@@ -1,0 +1,40 @@
+﻿[dotenv@17.3.1] injecting env (5) from .env.local -- tip: ΓÜí∩╕Å secrets for agents: https://dotenvx.com/as2
+{
+  "id": "e656a551-f1c7-41fc-9d94-17536f6e29ba",
+  "requester_id": "20c14815-355e-4389-9503-55e4763698c7",
+  "status": "accepted",
+  "matched_user_id": "ab1bd24d-0ef8-4e12-99c6-3a61bc8e7d9f",
+  "declined_user_ids": [],
+  "conversation_history": [
+    {
+      "role": "user",
+      "content": "I want to meet someone who likes hiking"
+    },
+    {
+      "role": "model",
+      "content": "Oh, that's great! When you say hiking, do you mean casual strolls in nature, or are you thinking more along the lines of challenging, all-day treks?"
+    },
+    {
+      "role": "user",
+      "content": "I like challenging all-day treks and long distance hiking."
+    },
+    {
+      "role": "model",
+      "content": "That's awesome! So, beyond just the hiking itself, are you hoping to find someone who shares a similar adventurous spirit, or perhaps someone who enjoys planning those epic trips together?"
+    },
+    {
+      "role": "user",
+      "content": "Yes, I want someone with an adventurous spirit who likes planning epic trips."
+    },
+    {
+      "role": "model",
+      "content": "Got it! So you're looking for an adventurous soul who loves planning and tackling challenging, all-day and long-distance treks. Sounds like a perfect match! Let me scan my network ΓÇö I'll ping you when I find someone!"
+    }
+  ],
+  "match_reason": "ΓÇó Ultra-marathon finisher\nΓÇó Loves outdoor adventures\nΓÇó Shares planning epic trips",
+  "conversation_id": "867cb03f-2db3-40d0-a72f-3739398b3e17",
+  "created_at": "2026-03-31T01:43:01.680583+00:00",
+  "updated_at": "2026-03-31T01:51:06.43092+00:00",
+  "expires_at": "2026-04-01T01:43:01.680583+00:00",
+  "intro_message": "You two are both passionate about challenging, long-distance treks and have that incredible adventurous spirit for planning epic trips! Think of all the mountains you'll conquer together!"
+}

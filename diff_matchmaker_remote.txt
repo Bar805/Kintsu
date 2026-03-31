@@ -1,0 +1,82 @@
+diff --git a/app/actions/matchmaker.ts b/app/actions/matchmaker.ts
+index 8a28cd7..3b95456 100644
+--- a/app/actions/matchmaker.ts
++++ b/app/actions/matchmaker.ts
+@@ -13,6 +13,7 @@ export type MatchRequest = {
+     declined_user_ids: string[]
+     conversation_history: { role: 'user' | 'model'; content: string }[]
+     match_reason: string | null
++    intro_message: string | null
+     conversation_id: string | null
+     created_at: string
+     updated_at: string
+@@ -430,13 +431,14 @@ export async function findMatch(requestId: string): Promise<void> {
+             return
+         }
+ 
+-        // Update request with match
++        // Update request with match (save intro message for later use)
+         await adminClient
+             .from('match_requests')
+             .update({
+                 status: 'pending_approval',
+                 matched_user_id: parsed.matchId,
+                 match_reason: parsed.matchReason,
++                intro_message: parsed.introMessage,
+             })
+             .eq('id', requestId)
+ 
+@@ -497,33 +499,13 @@ export async function respondToMatch(
+                 { conversation_id: conversation.id, user_id: user.id }
+             ])
+ 
+-        // Build intro message from conversation context
+-        const conversationText = request.conversation_history
+-            .map((m: any) => `${m.role === 'user' ? 'User' : 'Kintsu'}: ${m.content}`)
+-            .join('\n')
+-
+-        // Generate intro message
+-        let introMessage = "Hey you two! I connected you because I think you'd really hit it off — have fun getting to know each other! 🎉"
+-        try {
+-            const introPrompt = `You are Kintsu, a single friend who knows both people. You just matched two people. Write a brief, warm intro message for their chat. Address BOTH of them together (e.g. "You two...", "Both of you..."). Mention what they have in common based on this conversation: ${conversationText}. Never say "we". Speak as Kintsu alone. Keep it to 1-2 sentences. Output just the message text, nothing else.`
+-            const raw = await callGemini(introPrompt, [{ role: 'user', content: 'Generate the intro' }])
+-            // Gemini returns JSON due to responseMimeType — extract the actual text
+-            let cleaned = raw.trim()
+-            try {
+-                const parsed = JSON.parse(cleaned)
+-                // Handle {"message": "..."} or {"text": "..."} or just a plain string
+-                cleaned = parsed.message || parsed.text || parsed.intro || (typeof parsed === 'string' ? parsed : cleaned)
+-            } catch {
+-                // Not JSON, use as-is
+-            }
+-            introMessage = cleaned.replace(/^["']|["']$/g, '').trim()
+-        } catch (e) {
+-            console.error('Intro generation error:', e)
+-        }
++        // Use the intro message that was already generated during matching
++        // Fallback to a default if somehow missing
++        const introMessage = request.intro_message || "Hey you two! I connected you because I think you'd really hit it off — have fun getting to know each other! 🎉"
+ 
+         // Post intro message from Kintsu
+         if (trioId) {
+-            await adminClient
++            const { data: messageData, error: msgError } = await adminClient
+                 .from('messages')
+                 .insert({
+                     conversation_id: conversation.id,
+@@ -531,6 +513,15 @@ export async function respondToMatch(
+                     content: introMessage,
+                     is_ai_generated: true,
+                 })
++                .select()
++
++            if (msgError) {
++                console.error('[matchmaker] Error inserting intro message:', msgError)
++            } else {
++                console.log('[matchmaker] Intro message sent successfully:', messageData)
++            }
++        } else {
++            console.error('[matchmaker] NEXT_PUBLIC_TRIO_USER_ID not set - cannot send intro message')
+         }
+ 
+         // Update request status
