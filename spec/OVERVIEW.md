@@ -1,6 +1,6 @@
 # Kintsu System Overview
 
-**Version:** 1.0.0 | **Last Updated:** 2026-03-02
+**Version:** 2.0.0 | **Last Updated:** 2026-03-29
 
 ## What is Kintsu?
 
@@ -51,18 +51,25 @@ graph TB
 
 ### Data Models
 
+**Core Tables:**
 - [Profile](./data-models/profile.md) — User identity and preferences
 - [Conversation](./data-models/conversation.md) — Chat session metadata
 - [Message](./data-models/message.md) — Individual chat messages
 - [MatchRequest](./data-models/match-request.md) — Matchmaking state machine
 - [Participant](./data-models/participant.md) — Conversation membership
 
+**Cognitive AI Tables:**
+- [Trio Thought](./data-models/trio-thought.md) — Thought generation and evaluation
+- [Thought Stimulus](./data-models/thought-stimulus.md) — Explainability tracking
+- [Interest Saliency](./data-models/interest-saliency.md) — Dynamic relevance scoring
+- [Message Memory](./data-models/message-memory.md) — Short-term memory with interpretations
+
 ### Features
 
 - [Matchmaking Flow](./features/matchmaking-flow.md) — Conversational discovery → match selection
 - [Chat Messaging](./features/chat-messaging.md) — Real-time message exchange
 - [Timer System](./features/timer-system.md) — 24h expiry and archiving
-- [AI Interjections](./features/ai-interjections.md) — Trio evaluation and generation
+- [AI Interjections](./features/ai-interjections.md) — 8-phase cognitive workflow (dual-process)
 - [Meetup Suggestions](./features/meetup-suggestions.md) — 3-stage RAG pipeline
 - [Interest Tracking](./features/interest-tracking.md) — Double-blind interest mechanism
 
