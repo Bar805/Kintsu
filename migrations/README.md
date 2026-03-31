@@ -21,6 +21,9 @@ Migrations are numbered in chronological/dependency order:
 6. `006_chat_features.sql` - Add timer, interest tracking, and meetup suggestions to conversations
 7. `007_archive_timer.sql` - Add `user_ids_who_messaged` tracking to conversations
 8. `008_add_intro_message.sql` - Add `intro_message` column to match_requests
+9. `009_pgvector_extension.sql` - Enable pgvector extension and create cognitive system types
+10. `010_cognitive_tables.sql` - Create tables for dual-process thought system (trio_thoughts, thought_stimuli, interest_saliency, message_memory)
+11. `011_modify_messages_profiles.sql` - Add embedding and thought tracking fields to messages and profiles
 
 ## Important Notes
 

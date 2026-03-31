@@ -25,11 +25,15 @@ Individual chat messages in a conversation. Supports both user and AI-generated 
 | `content` | text | NOT NULL | Message text content |
 | `created_at` | timestamptz | NOT NULL, default now() | Send timestamp |
 | `is_ai_generated` | boolean | NOT NULL, default false | True if from Trio, false if user |
+| `thought_id` | UUID | FK to trio_thoughts(id) ON DELETE SET NULL, nullable | Thought that produced this message (if AI) |
+| `thought_category` | text | nullable | Category of thought (for analytics) |
+| `motivation_score` | numeric(3,2) | nullable | Motivation score of selected thought |
 
 ### Indexes
 ```sql
 CREATE INDEX idx_messages_conversation ON messages(conversation_id, created_at);
 CREATE INDEX idx_messages_sender ON messages(sender_id);
+CREATE INDEX idx_messages_thought ON messages(thought_id) WHERE thought_id IS NOT NULL;
 ```
 
 ### RLS Policies
@@ -99,6 +103,7 @@ CREATE POLICY "Users can send messages in own conversations"
    - Posted via admin client (bypasses RLS)
    - `sender_id = NEXT_PUBLIC_TRIO_USER_ID`
    - `is_ai_generated = true`
+   - `thought_id`, `thought_category`, `motivation_score` populated from selected thought
 
 3. **Ordering:** Messages ordered by `created_at ASC` (oldest first)
 
@@ -110,12 +115,12 @@ CREATE POLICY "Users can send messages in own conversations"
 
 ## Message Types
 
-| Type | sender_id | is_ai_generated | RLS Client |
-|------|-----------|-----------------|------------|
-| User message | User UUID | false | Regular (RLS enforced) |
-| Trio interjection | TRIO_USER_ID | true | Admin (RLS bypassed) |
-| Meetup suggestion | TRIO_USER_ID | true | Admin (RLS bypassed) |
-| Match intro | TRIO_USER_ID | true | Admin (RLS bypassed) |
+| Type | sender_id | is_ai_generated | thought_id | RLS Client |
+|------|-----------|-----------------|------------|------------|
+| User message | User UUID | false | NULL | Regular (RLS enforced) |
+| Trio interjection | TRIO_USER_ID | true | UUID | Admin (RLS bypassed) |
+| Meetup suggestion | TRIO_USER_ID | true | UUID | Admin (RLS bypassed) |
+| Match intro | TRIO_USER_ID | true | NULL | Admin (RLS bypassed) |
 
 ---
 

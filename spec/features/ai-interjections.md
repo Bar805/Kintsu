@@ -1,291 +1,313 @@
-# AI Interjections (Trio)
+# AI Interjections (Trio Cognitive Workflow)
 
 ## Purpose
-Context-aware AI interjections where Trio persona monitors conversations and speaks when opportunity score >= 7.
+Sophisticated AI interjection system using dual-process cognition (System 1 + System 2) with saliency-based memory for context-aware, meaningful responses.
 
 ## Scope
-- **In scope:** Two-phase evaluation + generation, scoring logic, Trio persona
-- **Out of scope:** Message delivery (see [Chat Messaging](./chat-messaging.md)), AI infrastructure (see [AI Integration](../infrastructure/ai-integration.md))
+- **In scope:** 8-phase cognitive workflow, thought generation, saliency engine, memory system
+- **Out of scope:** Message delivery (see [Chat Messaging](./chat-messaging.md)), database schemas (see [Data Models](../data-models/README.md))
 
 ## Dependencies
 - [Glossary](../shared/glossary.md) for Trio definition
-- [Message](../data-models/message.md) for data model
+- [Trio Thought](../data-models/trio-thought.md) for thought storage
+- [Interest Saliency](../data-models/interest-saliency.md) for relevance tracking
+- [Message Memory](../data-models/message-memory.md) for short-term memory
 - [AI Integration](../infrastructure/ai-integration.md) for Gemini patterns
 
 ---
 
-## Two-Phase Approach
+## Cognitive Workflow Overview
 
 ```mermaid
 flowchart TD
-    Start[User sends message] --> Phase1[Phase 1: Evaluation]
-    Phase1 --> Score{Score >= 7?}
-    Score -->|No| Silent[Trio stays silent]
-    Score -->|Yes| Phase2[Phase 2: Generation]
-    Phase2 --> Post[Post Trio message]
-    Silent --> End[End]
-    Post --> End
+    Start[User sends message] --> P1[Phase 1: Triggering]
+    P1 --> Check{Pass all<br/>conditions?}
+    Check -->|No| Silent[Trio stays silent]
+    Check -->|Yes| P2[Phase 2: Saliency Update]
+    P2 --> P3[Phase 3: Memory Addition]
+    P3 --> P4[Phase 4: Thought Generation]
+    P4 --> P5[Phase 5: Evaluation]
+    P5 --> P6{Phase 6: Selection<br/>score >= 3.5?}
+    P6 -->|No| Silent
+    P6 -->|Yes| P7[Phase 7: Articulation]
+    P7 --> P8[Phase 8: Emission]
+    P8 --> End[Message posted]
+    Silent --> End
 ```
 
-### Why Two Phases?
-
-1. **Cost Optimization:** Evaluation is fast/cheap, generation is slower/expensive
-2. **Precision:** Separate scoring from response generation
-3. **Debugging:** Can tune threshold independently
+**Total Latency:** ~3.5 seconds (non-blocking for user)
 
 ---
 
-## Phase 1: Evaluation
+## Phase 1: Thought Triggering
 
-### Purpose
-Score conversation (0-10) to determine if Trio should speak.
+**Entry:** After user message is inserted into database
 
-### evaluateConversationState() Flow
+**Conditions (ALL must be true):**
+1. Message from human user (not Trio)
+2. Last message was NOT from Trio (prevent consecutive speaking)
+3. Conversation is active (not archived)
 
-1. **Fetch Last 3 Messages:**
-   ```sql
-   SELECT content, sender_id, is_ai_generated
-   FROM messages
-   WHERE conversation_id = ?
-   ORDER BY created_at DESC
-   LIMIT 3
-   ```
-   Reverse to chronological order.
-
-2. **Safety Check:**
-   ```typescript
-   if (messages[messages.length - 1].is_ai_generated) {
-     return false  // Trio never speaks twice in a row
-   }
-   ```
-
-3. **Build Scoring Prompt:**
-   ```
-   {SCORING_RUBRIC}
-
-   CONTEXT (Profiles):
-   - User A: hiking, cooking
-   - User B: bouldering, photography
-
-   CHAT HISTORY:
-   User: I'm planning a hike this weekend
-   User: Which trail do you recommend?
-   User: I'm thinking East Rock
-
-   Return JSON: { "score": number, "reason": string }
-   ```
-
-4. **Call Gemini 2.5 Flash:**
-   - Model: `gemini-2.5-flash` (speed prioritized)
-   - Response format: JSON
-   - No retry logic (performance over reliability)
-
-5. **Parse Response:**
-   ```typescript
-   const result = JSON.parse(text) as { score: number, reason: string }
-   console.log('[ai] Trio Judge Result:', result)
-   ```
-
-6. **Return Decision:**
-   ```typescript
-   return result.score >= TRIO_CONFIG.INTERJECTION_THRESHOLD  // 7
-   ```
-
-### Scoring Rubric
-
-```
-SCORE 8-10 (MUST SPEAK):
-- Users discussing topic that matches BOTH profiles
-- Users need a nudge ("I don't know what to say...")
-- Users DIRECTLY address Trio by name
-- Perfect setup for witty connection or roast
-
-SCORE 4-7 (MAYBE):
-- Standard conversation flow
-- Generic agreement ("Yeah", "Cool")
-- One user mentions interest, unclear if other shares it
-
-SCORE 0-3 (SILENCE):
-- Short, low-effort replies ("lol", "ok")
-- Serious/emotional topics (breakups, sad news)
-- Logistics (planning meetup time/place)
-- Trio just spoke recently
-```
-
-### Threshold
-```typescript
-// lib/trio-config.ts
-export const TRIO_CONFIG = {
-  INTERJECTION_THRESHOLD: 7,
-  // ...
-}
-```
+**Implementation:** `shouldProcessMessage()` in `app/actions/cognitive-workflow.ts:39`
 
 ---
 
-## Phase 2: Generation
+## Phase 2: Saliency Recalibration
 
-### Purpose
-Generate Trio's contextual response based on conversation + profiles.
+**Purpose:** Update relevance scores for all knowledge based on new message
 
-### generateTrioResponse() Flow
+**Process:**
+1. Compute semantic embedding of new message (768-dim vector)
+2. Update interest saliency:
+   - Formula: `new_score = (old_score × 0.99) + cosine_similarity`
+   - Decay: 0.99 (slow - interests are stable)
+3. Update message memory saliency:
+   - Formula: `new_score = (old_score × 0.95) + cosine_similarity`
+   - Decay: 0.95 (fast - ephemeral context)
 
-1. **Fetch Last 10 Messages:**
-   ```sql
-   SELECT * FROM messages
-   WHERE conversation_id = ?
-   ORDER BY created_at DESC
-   LIMIT 10
-   ```
-   Reverse to chronological order.
+**Implementation:** `updateSaliency()` in `app/actions/cognitive-workflow.ts:89`
 
-2. **Fetch Profiles:**
-   ```typescript
-   const profiles = await supabase
-     .from('profiles')
-     .select('id, first_name, interests, bio')
-     .in('id', userIds)
-   ```
+**Bootstrap:** On first message, copies interests from profiles to `interest_saliency` table with initial score 0.5
 
-3. **Build Generation Prompt:**
-   ```
-   {TRIO_SYSTEM_PROMPT}
+---
 
-   USER PROFILES:
-   [User: Alice]
-   - Bio: "Adventure seeker, loves hiking"
-   - Interests: bouldering, photography
+## Phase 3: Memory Addition
 
-   [User: Bob]
-   - Bio: "Outdoor enthusiast"
-   - Interests: hiking, camping
+**Purpose:** Add message to short-term memory with semantic interpretation
 
-   CHAT HISTORY:
-   Alice: I'm planning a hike this weekend
-   Bob: Which trail do you recommend?
-   Alice: I'm thinking East Rock
+**Process:**
+1. Generate interpretation via LLM analyzing:
+   - Emotional tone (enthusiastic, hesitant, awkward)
+   - Connection signals (showing interest, asking questions)
+   - Friction points (confusion, disagreement)
+   - Interest mentions (explicit or implicit)
+2. Create combined embedding (content + interpretation)
+3. Insert into `message_memory` table with saliency = 1.0
+4. Maintain rolling window (delete oldest if > 10 messages)
 
-   Respond to the conversation as Trio.
-   ```
+**Implementation:** `addToMemory()` in `app/actions/cognitive-workflow.ts:164`
 
-4. **Call Gemini 2.5 Flash:**
-   - Model: `gemini-2.5-flash`
-   - Response format: Plain text (not JSON)
-   - No structured schema
+---
 
-5. **Post Message via Admin Client:**
-   ```typescript
-   const adminClient = createSupabaseClient(
-     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-     process.env.SUPABASE_SERVICE_ROLE_KEY!,
-     { auth: { autoRefreshToken: false, persistSession: false } }
-   )
+## Phase 4: Thought Generation (Dual-Process)
 
-   await adminClient.from('messages').insert({
-     conversation_id: conversationId,
-     sender_id: process.env.NEXT_PUBLIC_TRIO_USER_ID!,
-     content: responseText,
-     is_ai_generated: true
-   })
-   ```
+**Purpose:** Generate 3 candidate thoughts (1 System 1 + 2 System 2)
 
-### Trio System Prompt
+### System 1: Quick Social Reactions
+- **Type:** Fast, intuitive
+- **Context:** Last 3 messages only
+- **Temperature:** 0.8 (high spontaneity)
+- **Length:** < 15 words
+- **Categories:** encouragement, connection, friction_reduction
+- **Stimuli:** None (intuitive)
 
-```
-You are Trio, a wit-infused, high-energy mutual friend who knows everyone.
+### System 2: Deliberate Connection-Making
+- **Type:** Slow, memory-based
+- **Context:**
+  - Last 5 messages
+  - Top 5 salient interests
+  - Top 3 salient previous thoughts
+  - User profiles (bio + interests)
+- **Temperature:** 0.5 (balanced)
+- **Output:** 2 thoughts with stimuli citations
+- **Categories:** shared_interest, friction_reduction, meetup_nudge, icebreaker
+- **Stimuli:** Each thought cites 2-5 inputs (e.g., "INT#1", "MSG#3")
 
-YOUR GOAL:
-Connect users based on shared interests and nudge them to meet offline.
+**Parallelization:** System 1 and System 2 run concurrently
 
-YOUR PERSONA:
-- You are a "Social Catalyst", not a robot helper
-- Use casual, punchy language
-- Be brief (1-2 sentences max)
-- NEVER use sitcom catchphrases ("Legendary", "Suit Up")
-- NEVER say "How can I help?" or "As an AI..."
-- If users are hitting it off, just add "🔥🔥" or quick hype
+**Implementation:** `generateThoughts()` in `app/actions/cognitive-workflow.ts:402`
 
-HOW TO ACT:
-1. Scan profiles for shared interests (Spark Points)
-2. If they mention a shared topic, JUMP IN and highlight it
-3. If conversation dying, drop fun icebreaker from their bios
-```
+---
+
+## Phase 5: Thought Evaluation
+
+**Purpose:** Score each thought on Social Facilitation Motivation (1.0-5.0 scale)
+
+**Evaluation Factors:**
+1. **Connection Relevance (a):** Links to both users' profiles/interests?
+2. **Friction Severity (b):** Addresses social awkwardness/silence?
+3. **Timing Urgency (c):** Right moment to speak, or can wait?
+4. **Conversation Coherence (d):** Fits natural flow, or feels forced?
+5. **Interjection Balance (e):** How recently did Trio last speak?
+
+**Rating Scale:**
+- 1.0: Stay silent, conversation fine
+- 2.0: Minor opportunity, not urgent
+- 3.0: Neutral
+- 4.0: Strong opportunity, should speak
+- 5.0: Critical moment, must intervene
+
+**Balance Penalty:**
+- If Trio spoke < 3 messages ago: `score × 0.7` (30% penalty)
+- If Trio hasn't spoken in > 10 messages: `score × 1.1` (10% boost)
+- Final score clamped to 1.0-5.0
+
+**Implementation:** `evaluateThoughts()` in `app/actions/cognitive-workflow.ts:545`
+
+---
+
+## Phase 6: Thought Selection
+
+**Logic:**
+1. Sort thoughts by motivation score (descending)
+2. Check if top score >= 3.5 (threshold)
+3. If yes → select for articulation
+4. If no → stay silent, end workflow
+
+**Threshold Rationale:**
+- 3.5/5.0 = 70% motivation
+- Prevents over-speaking while catching important moments
+
+**Implementation:** `selectBestThought()` in `app/actions/cognitive-workflow.ts:597`
+
+---
+
+## Phase 7: Articulation
+
+**Purpose:** Convert internal thought to natural Trio-voiced message
+
+**Transformation:**
+- Input: Thought content (e.g., "Both users love hiking - East Rock mentioned")
+- Output: Trio message (e.g., "Wait both of you are hikers? East Rock is perfect for a first meetup 🥾")
+
+**Trio Voice Characteristics:**
+- Brief (1-2 sentences max)
+- Casual, punchy language
+- Specific profile references
+- Emojis sparingly (🔥 for hype, ✨ for connections)
+- Never "as an AI" or "I'm here to help"
+
+**Implementation:** `articulateThought()` in `app/actions/cognitive-workflow.ts:613`
+
+---
+
+## Phase 8: Response Emission
+
+**Purpose:** Post Trio's message and save metadata
+
+**Process:**
+1. Insert thought into `trio_thoughts` table
+2. Insert stimuli into `thought_stimuli` (System 2 only)
+3. Insert message into `messages` table:
+   - `sender_id = TRIO_USER_ID`
+   - `is_ai_generated = true`
+   - `thought_id` links back to thought
+   - `thought_category` and `motivation_score` stored
+4. Update thought record with `articulated_message_id`
+
+**Admin Client:** Bypasses RLS for system user posting
+
+**Implementation:** `emitResponse()` in `app/actions/cognitive-workflow.ts:648`
 
 ---
 
 ## Integration Point
 
-### Trigger in sendMessage()
+**Trigger:** In `sendMessage()` after user message inserted (`app/actions/chat.ts:226`)
 
 ```typescript
-export async function sendMessage(...) {
-  // ... insert message ...
+// Bootstrap interest saliency on first message
+await bootstrapInterestSaliency(conversationId)
 
-  // Trigger AI evaluation (non-blocking)
-  try {
-    const profiles = await fetchProfiles(conversationId)
-    const shouldSpeak = await evaluateConversationState(conversationId, profiles)
-    if (shouldSpeak) {
-      await generateTrioResponse(conversationId, profiles)
-    }
-  } catch (e) {
-    console.error('AI trigger error:', e)
-    // Do NOT block message success
+// Phase 1-8 workflow
+const shouldProcess = await shouldProcessMessage(conversationId, messageId)
+if (shouldProcess) {
+  await updateSaliency(conversationId, content)
+  await addToMemory(conversationId, messageId, content)
+  const { thoughts, stimuli } = await generateThoughts(...)
+  const evaluated = await evaluateThoughts(thoughts, conversationId)
+  const selected = selectBestThought(evaluated)
+  if (selected) {
+    const text = await articulateThought(selected, profiles)
+    await emitResponse(selected, text, stimuli)
   }
-
-  return true
 }
 ```
 
-**Key:** AI runs AFTER message saved. Errors don't affect user experience.
+**Fallback:** If cognitive workflow fails, falls back to old 2-phase system (evaluate + generate)
 
 ---
 
-## Business Rules
+## Comparison: Old vs New System
 
-1. **Never Twice:** If last message is AI, skip evaluation entirely
-2. **Threshold:** Score >= 7 required for interjection
-3. **Non-blocking:** AI failures don't block message sending
-4. **History Windows:**
-   - Evaluation: Last 3 messages
-   - Generation: Last 10 messages
-5. **Admin Client:** Trio messages posted via service role (bypass RLS)
-6. **Profile Context:** Always include both users' interests + bio
+| Aspect | Old (2-Phase) | New (8-Phase Cognitive) |
+|--------|---------------|-------------------------|
+| **Phases** | 2 (Evaluate → Generate) | 8 (Full cognitive pipeline) |
+| **Thoughts** | Single response | Dual-process (System 1 + System 2) |
+| **Context** | Last 3/10 messages | Saliency-scored profiles + memories + interpretations |
+| **Evaluation** | 0-10 rubric | 1-5 motivation with 5 factors |
+| **Profile Use** | Static input | Dynamic retrieval based on saliency |
+| **Threshold** | Fixed (7/10) | Adaptive (3.5/5 with balance penalty) |
+| **Explainability** | Reason in evaluation | Full chain: thoughts → stimuli → evaluation → selection |
+| **Memory** | Stateless | Short-term (10 messages) + long-term (profiles) |
+| **API Calls** | 2 per interjection | 7 per interjection |
 
 ---
 
 ## Performance
 
-| Aspect | Current | Notes |
-|--------|---------|-------|
-| Evaluation latency | ~1-2 seconds | Gemini Flash |
-| Generation latency | ~2-3 seconds | Gemini Flash |
-| Total latency | ~3-5 seconds | User doesn't wait (non-blocking) |
-| Interjection rate | ~5-10% of messages | Depends on conversation quality |
-| Cost | 2 API calls per interjection | Evaluate + generate |
+| Metric | Value | Notes |
+|--------|-------|-------|
+| Phase 2 (Saliency) | < 50ms | Local computation, no API |
+| Phase 3 (Memory) | < 100ms | Embedding + interpretation |
+| Phase 4 (Generation) | ~800ms | System 1 + System 2 parallel |
+| Phase 5 (Evaluation) | ~1200ms | 3 evaluations in parallel |
+| Phase 7 (Articulation) | ~500ms | Single API call |
+| **Total Latency** | **~3.5s** | User doesn't wait (non-blocking) |
+| **Interjection Rate** | **~5-10%** | Similar to old system |
+
+---
+
+## Business Rules
+
+1. **Never Twice:** If last message is AI, skip entire workflow
+2. **Threshold:** Motivation score >= 3.5 required
+3. **Non-blocking:** Workflow runs after message saved
+4. **All Thoughts Saved:** Selected AND unselected thoughts stored for analytics
+5. **Bootstrap:** Interest saliency initialized on first message
+6. **Rolling Window:** Message memory maintains last 10 messages
+7. **Stimuli Tracking:** System 2 thoughts cite specific inputs
+8. **Balance Penalty:** Explicit penalty for speaking too frequently
 
 ---
 
 ## Error Handling
 
-| Error | Behavior | User Impact |
-|-------|----------|-------------|
-| Evaluation fails | Return `false`, skip generation | None (silent failure) |
-| Generation fails | Log error, return `false` | None (Trio doesn't appear) |
-| Trio user ID missing | Throw error | None (caught and logged) |
-| Message insert fails | Log error, return `false` | None (interjection skipped) |
+| Error | Behavior | Impact |
+|-------|----------|--------|
+| Phase 1 conditions fail | Skip workflow | None (Trio stays silent) |
+| Saliency update fails | Continue workflow | Degraded context |
+| Memory addition fails | Continue workflow | No interpretation |
+| Thought generation fails | Fallback to old system | Trio may still speak |
+| Evaluation fails | Fallback to old system | Uses old 0-10 rubric |
+| Articulation fails | Trio stays silent | None |
+| Message insert fails | Log error | Interjection skipped |
+
+**Fallback Strategy:** Any major error triggers old 2-phase system as safety net
 
 ---
 
 ## Acceptance Criteria
 
-- [ ] Evaluation fetches last 3 messages
-- [ ] Evaluation returns false if last message is AI
-- [ ] Evaluation scores 0-10 using rubric
-- [ ] Score >= 7 triggers generation
-- [ ] Generation fetches last 10 messages + profiles
-- [ ] Trio messages posted via admin client
-- [ ] is_ai_generated = true for all Trio messages
-- [ ] sender_id = TRIO_USER_ID for all Trio messages
-- [ ] AI errors don't block user messages
-- [ ] Trio messages visually distinct in UI (gradient background, italic)
+- [ ] Phase 1 checks all 3 trigger conditions
+- [ ] Phase 2 updates interest (0.99 decay) and memory (0.95 decay) saliency
+- [ ] Phase 3 generates interpretation and maintains 10-message window
+- [ ] Phase 4 generates exactly 3 thoughts (1 System 1 + 2 System 2)
+- [ ] Phase 5 evaluates with 5 factors and applies balance penalty
+- [ ] Phase 6 selects only if score >= 3.5
+- [ ] Phase 7 articulates in Trio's voice
+- [ ] Phase 8 saves all thoughts (selected and unselected)
+- [ ] System 2 thoughts have 2-5 stimuli cited
+- [ ] Trio messages visually distinct in UI
+- [ ] Errors trigger fallback to old system
+- [ ] Bootstrap creates interest saliency on first message
+
+---
+
+## See Also
+
+- [Trio Thought Model](../data-models/trio-thought.md) - Thought storage schema
+- [Interest Saliency Model](../data-models/interest-saliency.md) - Relevance scoring
+- [Message Memory Model](../data-models/message-memory.md) - Short-term memory
+- [Thought Stimulus Model](../data-models/thought-stimulus.md) - Explainability tracking
+- [AI Integration](../infrastructure/ai-integration.md) - Gemini API patterns
