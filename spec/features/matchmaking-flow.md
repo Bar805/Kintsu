@@ -22,6 +22,7 @@ stateDiagram-v2
     chatting --> searching
     searching --> pending_approval
     searching --> no_candidates
+    searching --> error
     pending_approval --> accepted
     pending_approval --> declined
     pending_approval --> expired
@@ -29,6 +30,7 @@ stateDiagram-v2
     accepted --> [*]
     no_candidates --> [*]
     expired --> [*]
+    error --> [*]
 ```
 
 ### State Definitions
@@ -36,12 +38,13 @@ stateDiagram-v2
 | State | Duration | Description | Next States |
 |-------|----------|-------------|-------------|
 | `chatting` | Until 3 AI replies | Kintsu asks 2 follow-up questions to understand preferences | `searching` |
-| `searching` | ~5-10 seconds | AI evaluates candidate profiles and selects best match | `pending_approval`, `no_candidates` |
+| `searching` | ~5-10 seconds | AI evaluates candidate profiles and selects best match | `pending_approval`, `no_candidates`, `error` |
 | `pending_approval` | Until response or 24h | Matched user reviews profile card | `accepted`, `declined`, `expired` |
 | `accepted` | Terminal | Match approved, conversation created | N/A |
 | `declined` | Instant | Match rejected, retry with next candidate | `searching` |
 | `expired` | Terminal | 24h timeout, no response | N/A |
 | `no_candidates` | Terminal | No suitable matches available | N/A |
+| `error` | Terminal | Error during matching (user can retry) | N/A |
 
 ---
 
@@ -200,9 +203,25 @@ Next candidate selection excludes newly declined user. If no candidates remain â
 1. **Max Conversation History:** 6 messages (3 user + 3 AI)
 2. **Candidate Pool Size:** 20 profiles
 3. **Exclusion Persistence:** `declined_user_ids` never reset (unless new match_request)
-4. **State Immutability:** Terminal states (`accepted`, `expired`, `no_candidates`) cannot transition
+4. **State Immutability:** Terminal states (`accepted`, `expired`, `no_candidates`, `error`) cannot transition
 5. **Background Matching:** `findMatch()` runs in background (non-blocking)
 6. **Auto-Expiration:** Checked on every `getActiveMatchRequest()` call
+7. **Error Recovery:** Stuck `searching` requests (> 5 min) auto-transition to `error` state
+8. **Error Handling:** All `findMatch()` errors set status to `error` with user-friendly message
+
+---
+
+## Error Handling
+
+### Error Detection
+- **Timeout Detection:** Requests stuck in `searching` for > 5 minutes are marked as `error`
+- **Failure Handling:** Any error in `findMatch()` (database, AI, validation) sets status to `error`
+- **Error Message:** User-friendly message stored in `error_message` field
+
+### Error Recovery
+- Users see error card with message and "Click to try again" option
+- `clearMatchRequestError()` deletes the errored request
+- User can start fresh with new match request
 
 ---
 
@@ -216,3 +235,6 @@ Next candidate selection excludes newly declined user. If no candidates remain â
 - [ ] Declined matches retry immediately with new candidate
 - [ ] Accepted matches create conversation with 24h timer
 - [ ] Expired matches detected and marked automatically
+- [ ] Errors in findMatch set status to 'error' (never stuck in 'searching')
+- [ ] Stuck searching requests (> 5 min) auto-transition to error state
+- [ ] Error state shows user-friendly message with retry option
