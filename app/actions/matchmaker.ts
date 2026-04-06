@@ -8,7 +8,7 @@ import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 export type MatchRequest = {
     id: string
     requester_id: string
-    status: 'chatting' | 'searching' | 'pending_approval' | 'accepted' | 'declined' | 'expired' | 'no_candidates'
+    status: 'chatting' | 'searching' | 'pending_approval' | 'accepted' | 'declined' | 'expired' | 'no_candidates' | 'error'
     matched_user_id: string | null
     declined_user_ids: string[]
     conversation_history: { role: 'user' | 'model'; content: string }[]
@@ -18,6 +18,7 @@ export type MatchRequest = {
     created_at: string
     updated_at: string
     expires_at: string
+    error_message?: string | null
 }
 
 type ChatAIResponse = {
@@ -158,8 +159,9 @@ export async function getActiveMatchRequest(): Promise<MatchRequest | null> {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return null
 
-    // Check for expired requests first and expire them
     const adminClient = getAdminClient()
+
+    // Check for expired requests first and expire them
     await adminClient
         .from('match_requests')
         .update({ status: 'expired' })
@@ -167,11 +169,24 @@ export async function getActiveMatchRequest(): Promise<MatchRequest | null> {
         .in('status', ['chatting', 'searching', 'pending_approval'])
         .lt('expires_at', new Date().toISOString())
 
+    // Check for stuck searching requests (longer than 5 minutes)
+    // This handles cases where findMatch() failed without updating status
+    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString()
+    await adminClient
+        .from('match_requests')
+        .update({
+            status: 'error',
+            error_message: 'Match search timed out. Please try again.'
+        })
+        .eq('requester_id', user.id)
+        .eq('status', 'searching')
+        .lt('updated_at', fiveMinutesAgo)
+
     const { data } = await supabase
         .from('match_requests')
         .select('*')
         .eq('requester_id', user.id)
-        .in('status', ['chatting', 'searching', 'pending_approval'])
+        .in('status', ['chatting', 'searching', 'pending_approval', 'error'])
         .order('created_at', { ascending: false })
         .limit(1)
         .single()
@@ -329,83 +344,106 @@ export async function chatWithMatchmaker(
 export async function findMatch(requestId: string): Promise<void> {
     const adminClient = getAdminClient()
 
-    // Load the request
-    const { data: request } = await adminClient
-        .from('match_requests')
-        .select('*')
-        .eq('id', requestId)
-        .single()
-
-    if (!request || request.status !== 'searching') return
-
-    // Get requester's existing conversation partners (to exclude)
-    const { data: myParticipations } = await adminClient
-        .from('participants')
-        .select('conversation_id')
-        .eq('user_id', request.requester_id)
-
-    const myConvoIds = myParticipations?.map(p => p.conversation_id) || []
-
-    let existingPartnerIds: string[] = []
-    if (myConvoIds.length > 0) {
-        const { data: partners } = await adminClient
-            .from('participants')
-            .select('user_id')
-            .in('conversation_id', myConvoIds)
-            .neq('user_id', request.requester_id)
-
-        existingPartnerIds = [...new Set(partners?.map(p => p.user_id) || [])]
-    }
-
-    // Build exclusion list: existing partners + already declined + self
-    const excludeIds = [...new Set([
-        request.requester_id,
-        ...existingPartnerIds,
-        ...(request.declined_user_ids || []),
-    ])]
-
-    // Query candidates
-    let query = adminClient
-        .from('profiles')
-        .select('id, first_name, age, gender, bio, interests, looking_for, identity_chips, ai_summary')
-        .limit(20)
-
-    if (excludeIds.length > 0) {
-        query = query.not('id', 'in', `(${excludeIds.join(',')})`)
-    }
-
-    const { data: candidates } = await query
-
-    if (!candidates || candidates.length === 0) {
-        await adminClient
-            .from('match_requests')
-            .update({ status: 'no_candidates' })
-            .eq('id', requestId)
-        return
-    }
-
-    // Build candidates text for AI
-    const candidatesList = candidates.map(c => `
-        ID: ${c.id}
-        Name: ${c.first_name}
-        Age: ${c.age}
-        Gender: ${c.gender}
-        Bio: "${c.bio || ''}"
-        Interests: ${c.interests?.join(', ') || 'None listed'}
-        Identity: ${c.identity_chips?.join(', ') || 'None listed'}
-        AI Summary: "${c.ai_summary || ''}"
-    `).join('\n---\n')
-
-    // Build conversation summary for context
-    const conversationText = request.conversation_history
-        .map((m: any) => `${m.role === 'user' ? 'User' : 'Kintsu'}: ${m.content}`)
-        .join('\n')
-
-    const filledPrompt = MATCH_SYSTEM_PROMPT
-        .replace('{CONVERSATION_HISTORY}', conversationText)
-        .replace('{CANDIDATES_LIST}', candidatesList)
-
     try {
+        // Load the request
+        const { data: request, error: requestError } = await adminClient
+            .from('match_requests')
+            .select('*')
+            .eq('id', requestId)
+            .single()
+
+        if (requestError) {
+            console.error('[matchmaker] Error loading request:', requestError)
+            throw new Error('Failed to load match request')
+        }
+
+        if (!request || request.status !== 'searching') {
+            console.log('[matchmaker] Request not in searching state, skipping')
+            return
+        }
+
+        // Get requester's existing conversation partners (to exclude)
+        const { data: myParticipations, error: participationError } = await adminClient
+            .from('participants')
+            .select('conversation_id')
+            .eq('user_id', request.requester_id)
+
+        if (participationError) {
+            console.error('[matchmaker] Error fetching participations:', participationError)
+            throw new Error('Failed to fetch conversation history')
+        }
+
+        const myConvoIds = myParticipations?.map(p => p.conversation_id) || []
+
+        let existingPartnerIds: string[] = []
+        if (myConvoIds.length > 0) {
+            const { data: partners, error: partnersError } = await adminClient
+                .from('participants')
+                .select('user_id')
+                .in('conversation_id', myConvoIds)
+                .neq('user_id', request.requester_id)
+
+            if (partnersError) {
+                console.error('[matchmaker] Error fetching partners:', partnersError)
+                throw new Error('Failed to fetch existing partners')
+            }
+
+            existingPartnerIds = [...new Set(partners?.map(p => p.user_id) || [])]
+        }
+
+        // Build exclusion list: existing partners + already declined + self
+        const excludeIds = [...new Set([
+            request.requester_id,
+            ...existingPartnerIds,
+            ...(request.declined_user_ids || []),
+        ])]
+
+        // Query candidates
+        let query = adminClient
+            .from('profiles')
+            .select('id, first_name, age, gender, bio, interests, looking_for, identity_chips, ai_summary')
+            .limit(20)
+
+        if (excludeIds.length > 0) {
+            query = query.not('id', 'in', `(${excludeIds.join(',')})`)
+        }
+
+        const { data: candidates, error: candidatesError } = await query
+
+        if (candidatesError) {
+            console.error('[matchmaker] Error fetching candidates:', candidatesError)
+            throw new Error('Failed to fetch candidate profiles')
+        }
+
+        if (!candidates || candidates.length === 0) {
+            await adminClient
+                .from('match_requests')
+                .update({ status: 'no_candidates' })
+                .eq('id', requestId)
+            return
+        }
+
+        // Build candidates text for AI
+        const candidatesList = candidates.map(c => `
+            ID: ${c.id}
+            Name: ${c.first_name}
+            Age: ${c.age}
+            Gender: ${c.gender}
+            Bio: "${c.bio || ''}"
+            Interests: ${c.interests?.join(', ') || 'None listed'}
+            Identity: ${c.identity_chips?.join(', ') || 'None listed'}
+            AI Summary: "${c.ai_summary || ''}"
+        `).join('\n---\n')
+
+        // Build conversation summary for context
+        const conversationText = request.conversation_history
+            .map((m: any) => `${m.role === 'user' ? 'User' : 'Kintsu'}: ${m.content}`)
+            .join('\n')
+
+        const filledPrompt = MATCH_SYSTEM_PROMPT
+            .replace('{CONVERSATION_HISTORY}', conversationText)
+            .replace('{CANDIDATES_LIST}', candidatesList)
+
         const matchSchema = {
             type: "OBJECT",
             properties: {
@@ -423,16 +461,12 @@ export async function findMatch(requestId: string): Promise<void> {
         // Verify the matched ID exists in candidates
         const matchedCandidate = candidates.find(c => c.id === parsed.matchId)
         if (!matchedCandidate) {
-            console.error('AI picked invalid candidate:', parsed.matchId)
-            await adminClient
-                .from('match_requests')
-                .update({ status: 'no_candidates' })
-                .eq('id', requestId)
-            return
+            console.error('[matchmaker] AI picked invalid candidate:', parsed.matchId)
+            throw new Error('AI selected invalid candidate')
         }
 
         // Update request with match (save intro message for later use)
-        await adminClient
+        const { error: updateError } = await adminClient
             .from('match_requests')
             .update({
                 status: 'pending_approval',
@@ -442,12 +476,29 @@ export async function findMatch(requestId: string): Promise<void> {
             })
             .eq('id', requestId)
 
+        if (updateError) {
+            console.error('[matchmaker] Error updating match request:', updateError)
+            throw new Error('Failed to update match request')
+        }
+
+        console.log('[matchmaker] Successfully matched with candidate:', parsed.matchId)
+
     } catch (error) {
-        console.error('findMatch AI error:', error)
-        await adminClient
+        console.error('[matchmaker] findMatch error:', error)
+
+        // Set error state with user-friendly message
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
+        const { error: updateError } = await adminClient
             .from('match_requests')
-            .update({ status: 'no_candidates' })
+            .update({
+                status: 'error',
+                error_message: 'Failed to find matches. Please try again.'
+            })
             .eq('id', requestId)
+
+        if (updateError) {
+            console.error('[matchmaker] Failed to set error state:', updateError)
+        }
     }
 }
 
@@ -553,4 +604,30 @@ export async function respondToMatch(
 
         return { success: true }
     }
+}
+
+// ─── 6. clearMatchRequestError ────────────────────────────────────────────────
+// Clears an error state and allows user to retry
+
+export async function clearMatchRequestError(requestId: string): Promise<{ success: boolean }> {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return { success: false }
+
+    const adminClient = getAdminClient()
+
+    // Delete the errored request so user can start fresh
+    const { error } = await adminClient
+        .from('match_requests')
+        .delete()
+        .eq('id', requestId)
+        .eq('requester_id', user.id)
+        .eq('status', 'error')
+
+    if (error) {
+        console.error('[matchmaker] Error clearing match request:', error)
+        return { success: false }
+    }
+
+    return { success: true }
 }

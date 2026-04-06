@@ -41,9 +41,21 @@ CHECK (status IN (
   'accepted',           -- Match accepted (terminal)
   'declined',           -- Match declined (retry)
   'expired',            -- Timeout (terminal)
-  'no_candidates'       -- No suitable matches (terminal)
+  'no_candidates',      -- No suitable matches (terminal)
+  'error'               -- Error occurred, user can retry (terminal)
 ))
 ```
+
+### Error Handling Fields
+| Field | Type | Description |
+|-------|------|-------------|
+| `error_message` | text | User-friendly error message when status = 'error' |
+
+Error state is set when:
+- `findMatch()` fails (database errors, AI errors, invalid candidates)
+- Request stuck in `searching` state for > 5 minutes (timeout detection)
+
+Users can clear error state and retry via `clearMatchRequestError()` action.
 
 ### Indexes
 ```sql
