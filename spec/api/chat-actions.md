@@ -45,7 +45,9 @@ boolean  // true if success, false if failed
    - Add sender to user_ids_who_messaged
    - Clear timer if both users messaged
 5. Trigger AI evaluation (non-blocking, catch errors)
-6. Return true (even if AI fails)
+6. AI workflow includes staleness guard: discards thought if new messages arrived during ~3.5s processing
+7. AI receives full user profiles (gender, age, ai_summary, identity_chips, interests, bio) and uses sender names in message context
+8. Return true (even if AI fails)
 
 ### Error Responses
 - User not authenticated → false

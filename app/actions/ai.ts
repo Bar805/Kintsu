@@ -9,6 +9,10 @@ export interface UserProfile {
     first_name: string
     interests: string[]
     bio: string
+    gender?: string | null
+    age?: number | null
+    identity_chips?: string[] | null
+    ai_summary?: string | null
 }
 
 export async function evaluateConversationState(conversationId: string, profiles: UserProfile[]): Promise<boolean> {
@@ -28,19 +32,34 @@ export async function evaluateConversationState(conversationId: string, profiles
     // SAFETY: If last message was AI, don't speak
     if (messages[messages.length - 1].is_ai_generated) return false
 
+    // Build sender map
+    const senderMap = new Map<string, string>(profiles.map(p => [p.id, p.first_name]))
+    const formatSender = (m: { is_ai_generated: boolean; sender_id: string }) =>
+        m.is_ai_generated ? 'Trio' : (senderMap.get(m.sender_id) || 'User')
+
     // 2. Call Judge AI
     try {
         const apiKey = process.env.GOOGLE_API_KEY
         const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`
 
+        const profileContext = profiles.map(p => {
+            const parts: string[] = []
+            if (p.gender) parts.push(p.gender)
+            if (p.age) parts.push(`${p.age}`)
+            const tag = parts.length > 0 ? ` (${parts.join(', ')})` : ''
+            const lines = [`- ${p.first_name}${tag}: ${(p.interests || []).join(', ')}`]
+            if (p.ai_summary) lines.push(`  AI Summary: "${p.ai_summary}"`)
+            return lines.join('\n')
+        }).join('\n')
+
         const prompt = `
         ${TRIO_CONFIG.SCORING_RUBRIC}
 
         CONTEXT (Profiles):
-        ${profiles.map(p => `- ${p.first_name}: ${(p.interests || []).join(', ')}`).join('\n')}
+        ${profileContext}
 
         CHAT HISTORY:
-        ${messages.map(m => `${m.is_ai_generated ? 'Trio' : 'User'}: ${m.content}`).join('\n')}
+        ${messages.map(m => `${formatSender(m)}: ${m.content}`).join('\n')}
 
         Return ONLY a JSON object: { "score": number, "reason": "string" }
         `
@@ -96,7 +115,7 @@ export async function generateTrioResponse(conversationId: string, profiles?: Us
             const userIds = participants.map(p => p.user_id)
             const { data: rawProfiles } = await supabase
                 .from('profiles')
-                .select('id, first_name, interests, bio')
+                .select('id, first_name, interests, bio, gender, age, identity_chips, ai_summary')
                 .in('id', userIds)
 
             if (rawProfiles) {
@@ -104,7 +123,11 @@ export async function generateTrioResponse(conversationId: string, profiles?: Us
                     id: p.id,
                     first_name: p.first_name || 'Unknown',
                     interests: Array.isArray(p.interests) ? p.interests.map(String) : [],
-                    bio: p.bio || ''
+                    bio: p.bio || '',
+                    gender: p.gender || null,
+                    age: p.age || null,
+                    identity_chips: Array.isArray(p.identity_chips) ? p.identity_chips.map(String) : null,
+                    ai_summary: p.ai_summary || null
                 }))
             }
         }
@@ -130,14 +153,25 @@ export async function generateTrioResponse(conversationId: string, profiles?: Us
     const lastMessage = messages[messages.length - 1]?.content || ""
 
     // 2. Prepare Context
-    const profileContext = activeProfiles.map(p => `
-    [User: ${p.first_name}]
-    - Bio: "${p.bio}"
-    - Interests: ${(p.interests || []).join(', ')}
-    `).join('\n')
+    const senderMap = new Map<string, string>(activeProfiles.map(p => [p.id, p.first_name]))
+    const formatSender = (m: { is_ai_generated: boolean; sender_id: string }) =>
+        m.is_ai_generated ? 'Trio' : (senderMap.get(m.sender_id) || 'User')
+
+    const profileContext = activeProfiles.map(p => {
+        const parts: string[] = []
+        if (p.gender) parts.push(p.gender)
+        if (p.age) parts.push(`${p.age}`)
+        const tag = parts.length > 0 ? ` ${parts.join(', ')}` : ''
+        const lines = [`[User: ${p.first_name}${tag}]`]
+        if (p.ai_summary) lines.push(`- AI Summary: "${p.ai_summary}"`)
+        lines.push(`- Bio: "${p.bio}"`)
+        lines.push(`- Interests: ${(p.interests || []).join(', ')}`)
+        if (p.identity_chips && p.identity_chips.length > 0) lines.push(`- Identity: ${p.identity_chips.join(', ')}`)
+        return lines.join('\n')
+    }).join('\n')
 
     const conversationScript = messages.map(m =>
-        `${m.is_ai_generated ? 'Trio' : 'User'}: ${m.content}`
+        `${formatSender(m)}: ${m.content}`
     ).join('\n')
 
     // 3. Call AI

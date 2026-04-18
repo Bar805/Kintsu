@@ -2,17 +2,6 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Commands
-
-```bash
-npm run dev        # Start dev server (http://localhost:3000)
-npm run build      # Production build
-npm run start      # Start production server
-npm run lint       # ESLint
-```
-
-No test framework is configured.
-
 ## Architecture
 
 **Kintsu** is a social matchmaking app where an AI persona ("Trio") facilitates 1:1 conversations between matched users. Built with Next.js App Router, Supabase, and Google Gemini.
@@ -36,7 +25,7 @@ No test framework is configured.
 - All Gemini calls use retry logic with exponential backoff (2s, 4s, 8s) for 429 rate limits
 - Models: `gemini-2.5-flash` (chat, suggestions) and `gemini-2.5-pro` (evaluation)
 - JSON response format enforced via `responseMimeType: "application/json"`
-- Console logging prefixed with `[ai]`, `[suggestions]`, `[matchmaker]`
+- Console logging prefixed with `[ai]`, `[suggestions]`, `[matchmaker]`, `[cognitive]`
 
 ### Environment Variables (.env.local)
 
@@ -51,4 +40,4 @@ cream (#F9F8F4), sand (#E8E6DF), rust (#D95D39), teal (#2B6B6E), mustard (#F0C41
 
 ### Spec Programming
 
-The spec directory contains documentation for the project's workflow, data models and other logic description. A human should be able to read this directory to understand the implementation logic without reading code. The documentation files should be as concise as possible (less than 300 lines) and broken down if needed.
+The spec directory contains documentation for the project's workflow, data models and other logic description. A human should be able to read this directory to understand the implementation logic without reading code. The documentation files should be as concise as possible (less than 300 lines) and broken down if needed. Every time a new feature is added, th spec documentations should also have corresponding update.
