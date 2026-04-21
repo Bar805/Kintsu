@@ -32,7 +32,7 @@ flowchart LR
 
 1. **Hallucination Prevention:** AI can't invent venues (Stage 2 validates)
 2. **Quality:** Real places with Google Maps links
-3. **Context-Aware:** Extracts preferences from conversation history
+3. **Context-Aware:** Extracts preferences from conversation history, prioritizes places users already named
 
 ---
 
@@ -49,6 +49,8 @@ flowchart LR
   locationContext: string   // City/area if mentioned or ""
 }
 ```
+
+**Priority Rule:** If users explicitly mention a specific place name in conversation (e.g. "let's meet at Blue Bottle Coffee"), that exact name MUST be used as one of the queries. Already-mentioned places take priority over generated suggestions.
 
 **Example:** `{"queries": ["bouldering gym", "board game cafe"], "locationContext": "New Haven"}`
 
@@ -88,6 +90,8 @@ Pipeline continues only if >= 1 venue resolved. Ideally 2 venues.
 **Purpose:** Generate warm, natural message suggesting the VERIFIED venues.
 
 **Input:** Conversation history, user profiles, verified venues list
+
+**Context Rule:** If users already agreed on a place in conversation, the message should acknowledge that (e.g. "Great idea! Here's the info for that spot...") rather than suggesting a different place.
 
 **Response Schema:**
 ```typescript
@@ -210,6 +214,7 @@ await adminClient
 ## Acceptance Criteria
 
 - [ ] Stage 1 generates exactly 2 search queries
+- [ ] Stage 1 prioritizes place names already mentioned by users over generated suggestions
 - [ ] Stage 1 extracts location context if mentioned in conversation
 - [ ] Stage 2 calls Google Places API for each query
 - [ ] Stage 2 returns verified venues with all required fields

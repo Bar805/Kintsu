@@ -47,11 +47,19 @@ export function formatMessages(messages: Array<{ sender: string; content: string
  * @param profiles - Array of user profile objects
  * @returns Formatted string for prompt
  */
-export function formatProfiles(profiles: Array<{ name: string; interests?: string[] }>): string {
+export function formatProfiles(profiles: Array<{ name: string; interests?: string[]; gender?: string | null; age?: number | null; ai_summary?: string | null; identity_chips?: string[] | null }>): string {
   return profiles
     .map((profile, idx) => {
       const interests = profile.interests?.join(', ') || 'None listed'
-      return `**User ${idx + 1} (${profile.name})**\n- Interests: ${interests}`
+      const parts: string[] = []
+      if (profile.gender) parts.push(profile.gender)
+      if (profile.age) parts.push(`${profile.age}`)
+      const tagline = parts.length > 0 ? ` ${parts.join(', ')}` : ''
+      const lines: string[] = [`**User ${idx + 1} (${profile.name})${tagline}**`]
+      if (profile.ai_summary) lines.push(`- AI Summary: "${profile.ai_summary}"`)
+      lines.push(`- Interests: ${interests}`)
+      if (profile.identity_chips && profile.identity_chips.length > 0) lines.push(`- Identity: ${profile.identity_chips.join(', ')}`)
+      return lines.join('\n')
     })
     .join('\n\n')
 }

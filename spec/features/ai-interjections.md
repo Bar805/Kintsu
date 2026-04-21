@@ -107,7 +107,7 @@ flowchart TD
   - Last 5 messages
   - Top 5 salient interests
   - Top 3 salient previous thoughts
-  - User profiles (bio + interests)
+  - User profiles (name, gender, age, ai_summary, interests, identity_chips, bio)
 - **Temperature:** 0.5 (balanced)
 - **Output:** 2 thoughts with stimuli citations
 - **Categories:** shared_interest, friction_reduction, meetup_nudge, icebreaker
@@ -160,6 +160,12 @@ flowchart TD
 
 **Implementation:** `selectBestThought()` in `app/actions/cognitive-workflow.ts:597`
 
+### Staleness Guard
+
+After selection, before articulation, the system checks whether new messages arrived during the ~3.5s workflow. If the latest message ID differs from the trigger message, the selected thought is discarded.
+
+**Implementation:** In `sendMessage()` at `app/actions/chat.ts:345`
+
 ---
 
 ## Phase 7: Articulation
@@ -209,15 +215,22 @@ flowchart TD
 // Bootstrap interest saliency on first message
 await bootstrapInterestSaliency(conversationId)
 
+// Build sender map for message labeling
+const senderMap = new Map<string, string>(profiles.map(p => [p.id, p.first_name]))
+
 // Phase 1-8 workflow
 const shouldProcess = await shouldProcessMessage(conversationId, messageId)
 if (shouldProcess) {
   await updateSaliency(conversationId, content)
-  await addToMemory(conversationId, messageId, content)
-  const { thoughts, stimuli } = await generateThoughts(...)
-  const evaluated = await evaluateThoughts(thoughts, conversationId)
+  await addToMemory(conversationId, messageId, content, senderMap)
+  const { thoughts, stimuli } = await generateThoughts(..., senderMap)
+  const evaluated = await evaluateThoughts(thoughts, conversationId, senderMap)
   const selected = selectBestThought(evaluated)
   if (selected) {
+    // Staleness guard: discard if new messages arrived during workflow
+    const latestMsg = await fetchLatestMessage(conversationId)
+    if (latestMsg.id !== triggerMessageId) return // stale
+
     const text = await articulateThought(selected, profiles)
     await emitResponse(selected, text, stimuli)
   }
@@ -236,7 +249,7 @@ if (shouldProcess) {
 | **Thoughts** | Single response | Dual-process (System 1 + System 2) |
 | **Context** | Last 3/10 messages | Saliency-scored profiles + memories + interpretations |
 | **Evaluation** | 0-10 rubric | 1-5 motivation with 5 factors |
-| **Profile Use** | Static input | Dynamic retrieval based on saliency |
+| **Profile Use** | Name + interests only | Full profiles (name, gender, age, ai_summary, interests, identity_chips, bio) |
 | **Threshold** | Fixed (7/10) | Adaptive (3.5/5 with balance penalty) |
 | **Explainability** | Reason in evaluation | Full chain: thoughts → stimuli → evaluation → selection |
 | **Memory** | Stateless | Short-term (10 messages) + long-term (profiles) |
@@ -268,6 +281,9 @@ if (shouldProcess) {
 6. **Rolling Window:** Message memory maintains last 10 messages
 7. **Stimuli Tracking:** System 2 thoughts cite specific inputs
 8. **Balance Penalty:** Explicit penalty for speaking too frequently
+9. **Staleness Guard:** Discard selected thought if new messages arrived during workflow
+10. **Sender Names:** Messages labeled with actual user names, not generic "User"
+11. **Rich Profiles:** AI receives full profile context (gender, age, ai_summary, identity_chips)
 
 ---
 

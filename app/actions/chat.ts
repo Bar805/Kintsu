@@ -267,7 +267,7 @@ export async function sendMessage(conversationId: string, content: string, id?: 
         const userIds = participants.map(p => p.user_id)
         const { data: rawProfiles } = await supabase
             .from('profiles')
-            .select('id, first_name, interests, bio')
+            .select('id, first_name, interests, bio, gender, age, identity_chips, ai_summary')
             .in('id', userIds)
 
         if (!rawProfiles) return true
@@ -276,28 +276,36 @@ export async function sendMessage(conversationId: string, content: string, id?: 
             id: p.id,
             first_name: p.first_name || 'Unknown',
             interests: Array.isArray(p.interests) ? p.interests.map(String) : [],
-            bio: p.bio || ''
+            bio: p.bio || '',
+            gender: p.gender || null,
+            age: p.age || null,
+            identity_chips: Array.isArray(p.identity_chips) ? p.identity_chips.map(String) : null,
+            ai_summary: p.ai_summary || null
         }))
+
+        // Build sender map for message labeling
+        const senderMap = new Map<string, string>(profiles.map(p => [p.id, p.first_name]))
 
         // Phase 2: Update saliency
         await updateSaliency(conversationId, content)
 
         // Phase 3: Add to memory
-        await addToMemory(conversationId, insertedMsg.id, content)
+        await addToMemory(conversationId, insertedMsg.id, content, senderMap)
 
         // Phase 4: Generate thoughts
-        const { thoughts, stimuli } = await generateThoughts(conversationId, insertedMsg.id, profiles)
+        const { thoughts, stimuli } = await generateThoughts(conversationId, insertedMsg.id, profiles, senderMap)
 
         // Phase 5: Evaluate thoughts
-        const evaluatedThoughts = await evaluateThoughts(thoughts, conversationId)
+        const evaluatedThoughts = await evaluateThoughts(thoughts, conversationId, senderMap)
 
-        // Save all thoughts (selected and unselected) to database
+        // Admin client for saving thoughts and staleness check
         const adminClient = createSupabaseClient(
             process.env.NEXT_PUBLIC_SUPABASE_URL!,
             process.env.SUPABASE_SERVICE_ROLE_KEY!,
             { auth: { autoRefreshToken: false, persistSession: false } }
         )
 
+        // Save all thoughts (selected and unselected) to database
         for (const thought of evaluatedThoughts) {
             const { data: savedThought } = await adminClient
                 .from('trio_thoughts')
@@ -334,6 +342,21 @@ export async function sendMessage(conversationId: string, content: string, id?: 
         const selectedThought = await selectBestThought(evaluatedThoughts)
 
         if (selectedThought) {
+            // Staleness guard: re-check if new messages arrived during the workflow
+            const { data: latestMsg } = await adminClient
+                .from('messages')
+                .select('id')
+                .eq('conversation_id', conversationId)
+                .order('created_at', { ascending: false })
+                .limit(1)
+                .single()
+
+            if (latestMsg && latestMsg.id !== insertedMsg.id) {
+                console.log('[cognitive] STALE THOUGHT: New messages arrived during workflow. Discarding.')
+                console.log('[cognitive] ========================================')
+                return true
+            }
+
             // Phase 7: Articulate
             const messageText = await articulateThought(selectedThought, profiles)
 
@@ -406,13 +429,31 @@ export async function sendMessage(conversationId: string, content: string, id?: 
                 const userIds = participants.map(p => p.user_id)
                 const { data: profiles } = await supabase
                     .from('profiles')
-                    .select('id, first_name, interests, bio')
+                    .select('id, first_name, interests, bio, gender, age, identity_chips, ai_summary')
                     .in('id', userIds)
 
                 if (profiles) {
-                    const shouldSpeak = await evaluateConversationState(conversationId, profiles)
+                    const shouldSpeak = await evaluateConversationState(conversationId, profiles.map(p => ({
+                        id: p.id,
+                        first_name: p.first_name || 'Unknown',
+                        interests: Array.isArray(p.interests) ? p.interests.map(String) : [],
+                        bio: p.bio || '',
+                        gender: p.gender || null,
+                        age: p.age || null,
+                        identity_chips: Array.isArray(p.identity_chips) ? p.identity_chips.map(String) : null,
+                        ai_summary: p.ai_summary || null
+                    })))
                     if (shouldSpeak) {
-                        await generateTrioResponse(conversationId, profiles)
+                        await generateTrioResponse(conversationId, profiles.map(p => ({
+                            id: p.id,
+                            first_name: p.first_name || 'Unknown',
+                            interests: Array.isArray(p.interests) ? p.interests.map(String) : [],
+                            bio: p.bio || '',
+                            gender: p.gender || null,
+                            age: p.age || null,
+                            identity_chips: Array.isArray(p.identity_chips) ? p.identity_chips.map(String) : null,
+                            ai_summary: p.ai_summary || null
+                        })))
                     }
                 }
             }

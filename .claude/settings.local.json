@@ -5,7 +5,10 @@
       "Bash(npm install:*)",
       "Bash(npx vitest:*)",
       "WebSearch",
-      "WebFetch(domain:ai.google.dev)"
+      "WebFetch(domain:ai.google.dev)",
+      "Write",
+      "Edit",
+      "MultiEdit"
     ]
   }
 }

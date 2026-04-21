@@ -15,10 +15,34 @@ export interface UserProfile {
   first_name: string
   interests: string[]
   bio: string
+  gender?: string | null
+  age?: number | null
+  identity_chips?: string[] | null
+  ai_summary?: string | null
 }
 
 export type SystemType = 'system1' | 'system2'
 export type StimulusType = 'interest' | 'message' | 'previous_thought' | 'profile_bio'
+export type SenderMap = Map<string, string>
+
+function formatProfileRich(p: UserProfile): string {
+  const parts: string[] = []
+  if (p.gender) parts.push(p.gender)
+  if (p.age) parts.push(`${p.age}`)
+  const tagline = parts.length > 0 ? ` (${parts.join(', ')})` : ''
+
+  const lines: string[] = [`**${p.first_name}**${tagline}`]
+  if (p.ai_summary) lines.push(`- AI Summary: "${p.ai_summary}"`)
+  if (p.interests.length > 0) lines.push(`- Interests: ${p.interests.join(', ')}`)
+  if (p.identity_chips && p.identity_chips.length > 0) lines.push(`- Identity: ${p.identity_chips.join(', ')}`)
+  if (p.bio) lines.push(`- Bio: ${p.bio}`)
+  return lines.join('\n')
+}
+
+function formatSender(isAi: boolean, senderId: string, senderMap: SenderMap): string {
+  if (isAi) return 'Trio'
+  return senderMap.get(senderId) || 'User'
+}
 
 export interface Thought {
   id?: string
@@ -198,12 +222,12 @@ export async function updateSaliency(conversationId: string, messageContent: str
 // PHASE 3: MEMORY ADDITION
 // ============================================================================
 
-async function generateInterpretation(messageContent: string, senderName: string, recentMessages: any[]): Promise<string> {
+async function generateInterpretation(messageContent: string, senderName: string, recentMessages: any[], senderMap: SenderMap): Promise<string> {
   const apiKey = process.env.GOOGLE_API_KEY
   const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`
 
   const recentContext = recentMessages
-    .map((m, idx) => `${idx + 1}. **${m.is_ai_generated ? 'Trio' : 'User'}**: "${m.content}"`)
+    .map((m, idx) => `${idx + 1}. **${formatSender(m.is_ai_generated, m.sender_id, senderMap)}**: "${m.content}"`)
     .join('\n')
 
   const prompt = await loadPrompt('message-interpretation.md', {
@@ -226,7 +250,7 @@ async function generateInterpretation(messageContent: string, senderName: string
   return data.candidates?.[0]?.content?.parts?.[0]?.text || messageContent
 }
 
-export async function addToMemory(conversationId: string, messageId: string, messageContent: string): Promise<void> {
+export async function addToMemory(conversationId: string, messageId: string, messageContent: string, senderMap: SenderMap): Promise<void> {
   const config = getCognitiveConfig()
   const adminClient = createAdminClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -249,7 +273,7 @@ export async function addToMemory(conversationId: string, messageId: string, mes
 
   const { data: recentMessages } = await adminClient
     .from('messages')
-    .select('content, is_ai_generated')
+    .select('content, is_ai_generated, sender_id')
     .eq('conversation_id', conversationId)
     .order('created_at', { ascending: false })
     .limit(config.SYSTEM1_CONTEXT_MESSAGES)
@@ -258,7 +282,8 @@ export async function addToMemory(conversationId: string, messageId: string, mes
   const interpretation = await generateInterpretation(
     messageContent,
     profile?.first_name || 'User',
-    recentMessages || []
+    recentMessages || [],
+    senderMap
   )
   console.log(`[cognitive] Interpretation: "${interpretation}"`)
 
@@ -310,7 +335,7 @@ export async function addToMemory(conversationId: string, messageId: string, mes
 // PHASE 4: THOUGHT GENERATION (DUAL-PROCESS)
 // ============================================================================
 
-async function generateSystem1Thought(conversationId: string, triggerMessageId: string): Promise<Thought> {
+async function generateSystem1Thought(conversationId: string, triggerMessageId: string, senderMap: SenderMap): Promise<Thought> {
   const config = getCognitiveConfig()
   const supabase = await createClient()
   const apiKey = process.env.GOOGLE_API_KEY
@@ -319,13 +344,13 @@ async function generateSystem1Thought(conversationId: string, triggerMessageId: 
   // Get last N messages based on config
   const { data: messages } = await supabase
     .from('messages')
-    .select('content, is_ai_generated')
+    .select('content, is_ai_generated, sender_id')
     .eq('conversation_id', conversationId)
     .order('created_at', { ascending: false })
     .limit(config.SYSTEM1_CONTEXT_MESSAGES)
 
   const messagesContext = messages?.reverse()
-    .map((m, idx) => `${idx + 1}. **${m.is_ai_generated ? 'Trio' : 'User'}**: "${m.content}"`)
+    .map((m, idx) => `${idx + 1}. **${formatSender(m.is_ai_generated, m.sender_id, senderMap)}**: "${m.content}"`)
     .join('\n') || ''
 
   const prompt = await loadPrompt('system1-generation.md', {
@@ -378,7 +403,7 @@ async function generateSystem2Thoughts(conversationId: string, triggerMessageId:
   // Get last N messages based on config
   const { data: messages } = await adminClient
     .from('messages')
-    .select('id, content, is_ai_generated')
+    .select('id, content, is_ai_generated, sender_id')
     .eq('conversation_id', conversationId)
     .order('created_at', { ascending: false })
     .limit(config.SYSTEM2_CONTEXT_MESSAGES)
@@ -400,11 +425,13 @@ async function generateSystem2Thoughts(conversationId: string, triggerMessageId:
     .limit(config.SYSTEM2_TOP_THOUGHTS)
 
   const profilesContext = profiles
-    .map(p => `**${p.first_name}**\n- Interests: ${p.interests.join(', ')}\n- Bio: ${p.bio}`)
+    .map(p => formatProfileRich(p))
     .join('\n\n')
 
+  const senderMap = new Map<string, string>(profiles.map(p => [p.id, p.first_name]))
+
   const messagesContext = messages?.reverse()
-    .map((m, idx) => `${idx + 1}. **${m.is_ai_generated ? 'Trio' : 'User'}**: "${m.content}"`)
+    .map((m, idx) => `${idx + 1}. **${formatSender(m.is_ai_generated, m.sender_id, senderMap)}**: "${m.content}"`)
     .join('\n') || ''
 
   const interestsContext = interests
@@ -505,12 +532,12 @@ async function generateSystem2Thoughts(conversationId: string, triggerMessageId:
   return { thoughts, stimuli: stimuliMap }
 }
 
-export async function generateThoughts(conversationId: string, triggerMessageId: string, profiles: UserProfile[]): Promise<{ thoughts: Thought[], stimuli: Map<string, ThoughtStimulus[]> }> {
+export async function generateThoughts(conversationId: string, triggerMessageId: string, profiles: UserProfile[], senderMap: SenderMap): Promise<{ thoughts: Thought[], stimuli: Map<string, ThoughtStimulus[]> }> {
   console.log('[cognitive] Phase 4: Generating thoughts (System 1 + System 2)')
 
   // Run in parallel for speed
   const [system1Thought, system2Result] = await Promise.all([
-    generateSystem1Thought(conversationId, triggerMessageId),
+    generateSystem1Thought(conversationId, triggerMessageId, senderMap),
     generateSystem2Thoughts(conversationId, triggerMessageId, profiles)
   ])
 
@@ -525,7 +552,7 @@ export async function generateThoughts(conversationId: string, triggerMessageId:
 // PHASE 5: THOUGHT EVALUATION
 // ============================================================================
 
-async function evaluateThought(thought: Thought, conversationId: string): Promise<{ base_score: number, reasoning: string }> {
+async function evaluateThought(thought: Thought, conversationId: string, senderMap: SenderMap): Promise<{ base_score: number, reasoning: string }> {
   const config = getCognitiveConfig()
   const supabase = await createClient()
   const apiKey = process.env.GOOGLE_API_KEY
@@ -534,7 +561,7 @@ async function evaluateThought(thought: Thought, conversationId: string): Promis
   // Get last 5 messages for context
   const { data: messages } = await supabase
     .from('messages')
-    .select('content, is_ai_generated')
+    .select('content, is_ai_generated, sender_id')
     .eq('conversation_id', conversationId)
     .order('created_at', { ascending: false })
     .limit(5)
@@ -551,7 +578,7 @@ async function evaluateThought(thought: Thought, conversationId: string): Promis
   const messagesSinceTrioSpoke = trioMessages && trioMessages.length > 0 ? 5 : 999 // Estimate
 
   const messagesContext = messages?.reverse()
-    .map((m, idx) => `${idx + 1}. **${m.is_ai_generated ? 'Trio' : 'User'}**: "${m.content}"`)
+    .map((m, idx) => `${idx + 1}. **${formatSender(m.is_ai_generated, m.sender_id, senderMap)}**: "${m.content}"`)
     .join('\n') || ''
 
   const prompt = await loadPrompt('thought-evaluation.md', {
@@ -588,7 +615,7 @@ async function evaluateThought(thought: Thought, conversationId: string): Promis
   return evaluation
 }
 
-export async function evaluateThoughts(thoughts: Thought[], conversationId: string): Promise<Thought[]> {
+export async function evaluateThoughts(thoughts: Thought[], conversationId: string, senderMap: SenderMap): Promise<Thought[]> {
   const config = getCognitiveConfig()
   console.log('[cognitive] Phase 5: Evaluating thoughts')
 
@@ -618,7 +645,7 @@ export async function evaluateThoughts(thoughts: Thought[], conversationId: stri
 
   // Evaluate all thoughts in parallel
   const evaluations = await Promise.all(
-    thoughts.map(t => evaluateThought(t, conversationId))
+    thoughts.map(t => evaluateThought(t, conversationId, senderMap))
   )
 
   // Apply balance penalty/boost
@@ -696,17 +723,19 @@ export async function articulateThought(thought: Thought, profiles: UserProfile[
   // Get last N messages for context
   const { data: messages } = await supabase
     .from('messages')
-    .select('content, is_ai_generated')
+    .select('content, is_ai_generated, sender_id')
     .eq('conversation_id', thought.conversation_id)
     .order('created_at', { ascending: false })
     .limit(config.SYSTEM2_CONTEXT_MESSAGES)
 
   const profilesContext = profiles
-    .map(p => `**${p.first_name}**\n- Interests: ${p.interests.join(', ')}\n- Bio: ${p.bio}`)
+    .map(p => formatProfileRich(p))
     .join('\n\n')
 
+  const senderMap = new Map<string, string>(profiles.map(p => [p.id, p.first_name]))
+
   const messagesContext = messages?.reverse()
-    .map((m, idx) => `${idx + 1}. **${m.is_ai_generated ? 'Trio' : 'User'}**: "${m.content}"`)
+    .map((m, idx) => `${idx + 1}. **${formatSender(m.is_ai_generated, m.sender_id, senderMap)}**: "${m.content}"`)
     .join('\n') || ''
 
   const prompt = await loadPrompt('articulation.md', {

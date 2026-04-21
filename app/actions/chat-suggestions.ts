@@ -74,6 +74,8 @@ Rules:
 - If a city, neighborhood, or area is mentioned, include it in locationContext
 - If no location is mentioned, set locationContext to an empty string
 - Queries should be specific activity types (e.g. "bouldering gym", "board game cafe", "jazz bar") not generic ("fun place")
+- IMPORTANT: If users have already mentioned a specific place name (e.g. "let's meet at Blue Bottle Coffee", "how about Central Park?"), you MUST use that exact place name as one of the queries. Prioritize places users explicitly named over generating new suggestions.
+- If both queries are already-mentioned places, that's fine — do not invent alternatives.
 `
 
 // Stage 3 prompt: Synthesize the final message using verified venues
@@ -86,6 +88,7 @@ Rules:
 - Reference the actual venue names provided to you
 - Do NOT invent or suggest any places that are not in the provided venue list
 - Keep the message concise and fun
+- IMPORTANT: If the users already mentioned a specific place in their conversation, acknowledge that in your message (e.g. "Great idea! Here's the info for that spot..."). Do NOT suggest a different place when users have already agreed on one.
 `
 
 export interface MeetupPlace {
