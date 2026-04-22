@@ -357,8 +357,16 @@ export async function sendMessage(conversationId: string, content: string, id?: 
                 return true
             }
 
-            // Phase 7: Articulate
-            const messageText = await articulateThought(selectedThought, profiles)
+            // Phase 7: Articulate (with safety catch - if this fails, Trio stays silent)
+            let messageText: string
+            try {
+                messageText = await articulateThought(selectedThought, profiles)
+            } catch (articulationError) {
+                console.error('[cognitive] Phase 7 failed - Trio will stay silent:', articulationError)
+                console.log('[cognitive] ✓ WORKFLOW COMPLETE: Trio stays silent (articulation failed)')
+                console.log('[cognitive] ========================================')
+                return true
+            }
 
             // Phase 8: Emit (simplified - just post message)
             const trioId = process.env.NEXT_PUBLIC_TRIO_USER_ID

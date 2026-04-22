@@ -712,6 +712,28 @@ export async function selectBestThought(thoughts: Thought[]): Promise<Thought | 
 // PHASE 7: ARTICULATION
 // ============================================================================
 
+/**
+ * Check if text contains raw internal reasoning references that should never
+ * appear in user-facing messages (e.g., MSG#4, THOUGHT#5, INT#3, saliency scores).
+ */
+function containsInternalReferences(text: string): boolean {
+  // Match patterns like (MSG#8), (THOUGHT#5), (INT#3), profile annotations, saliency references
+  const internalPatterns = [
+    /\(MSG#\d+\)/i,
+    /\(THOUGHT#\d+\)/i,
+    /\(INT#\d+\)/i,
+    /\(.*?'s profile\)/i,
+    /saliency/i,
+    /stimulus/i,
+    /leverage their shared/i,
+    /as previously suggested/i,
+    /\bMSG#\d+\b/,
+    /\bTHOUGHT#\d+\b/,
+    /\bINT#\d+\b/,
+  ]
+  return internalPatterns.some(pattern => pattern.test(text))
+}
+
 export async function articulateThought(thought: Thought, profiles: UserProfile[]): Promise<string> {
   const config = getCognitiveConfig()
   console.log('[cognitive] Phase 7: Articulating thought')
@@ -746,17 +768,56 @@ export async function articulateThought(thought: Thought, profiles: UserProfile[
     MESSAGES: messagesContext
   })
 
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: { temperature: config.ARTICULATION_TEMPERATURE }
-    })
-  })
+  // Attempt articulation with retry
+  let messageText: string | null = null
+  const MAX_RETRIES = 2
 
-  const data = await response.json()
-  const messageText = data.candidates?.[0]?.content?.parts?.[0]?.text || thought.content
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { temperature: config.ARTICULATION_TEMPERATURE }
+        })
+      })
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        console.error(`[cognitive] Phase 7: Articulation API error (attempt ${attempt}/${MAX_RETRIES}): ${response.status} - ${errorText}`)
+        continue
+      }
+
+      const data = await response.json()
+      const candidateText = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim()
+
+      if (!candidateText) {
+        console.warn(`[cognitive] Phase 7: Empty articulation response (attempt ${attempt}/${MAX_RETRIES})`)
+        continue
+      }
+
+      // Validate: articulated text must NOT contain raw internal references
+      if (containsInternalReferences(candidateText)) {
+        console.warn(`[cognitive] Phase 7: Articulation still contains internal references (attempt ${attempt}/${MAX_RETRIES}): "${candidateText.substring(0, 100)}..."`)
+        // On last attempt, we'll handle this below
+        if (attempt < MAX_RETRIES) continue
+      }
+
+      messageText = candidateText
+      break
+    } catch (error) {
+      console.error(`[cognitive] Phase 7: Articulation fetch error (attempt ${attempt}/${MAX_RETRIES}):`, error)
+    }
+  }
+
+  // Final validation: if we still have internal references or no text, abort
+  if (!messageText || containsInternalReferences(messageText)) {
+    console.error('[cognitive] Phase 7 FAILED: Could not produce clean articulated message. Aborting message emission.')
+    console.error(`[cognitive] Raw thought was: "${thought.content.substring(0, 150)}..."`)
+    // Throw to prevent posting - the caller should handle this gracefully
+    throw new Error('Articulation failed: could not produce a clean user-facing message')
+  }
 
   console.log('[cognitive] Phase 7 complete: Articulated message')
   console.log(`[cognitive] Trio will say: "${messageText}"`)
