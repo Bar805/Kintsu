@@ -13,44 +13,30 @@ Patterns for Google Gemini API integration: retry logic, structured outputs, err
 
 ---
 
-## Retry Logic (Exponential Backoff)
+## Retry Logic & Model Fallback
 
 ### Purpose
-Handle Gemini API rate limits (429 errors) gracefully.
+Handle Gemini API errors (429 rate limits, 503 service unavailable) gracefully with per-model retry and automatic model fallback.
 
-### Pattern
-```typescript
-for (let attempt = 0; attempt < 3; attempt++) {
-  const response = await fetch(geminiUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body
-  })
+### Shared Client (`lib/gemini.ts`)
+All Gemini API calls use a single `callGemini()` function that provides:
+- **Model fallback chain** on 503/server errors: gemini-2.5-flash → gemini-2.5-pro → gemini-3-flash-preview → gemini-3.1-pro-preview
+- **Per-model retry** with exponential backoff (2s, 4s, 8s) for 429 rate limits
+- **Network error retry** before falling back to next model
+- Consistent JSON parsing and error logging
 
-  if (response.status === 429) {
-    const wait = Math.pow(2, attempt + 1) * 1000  // 2s, 4s, 8s
-    console.log(`Gemini rate limited (attempt ${attempt + 1}/3), retrying in ${wait}ms`)
-    await new Promise(r => setTimeout(r, wait))
-    continue
-  }
-
-  if (!response.ok) {
-    const err = await response.text()
-    console.error('Gemini API Error:', err)
-    throw new Error(`API Error: ${response.status}`)
-  }
-
-  return await response.text()
-}
-
-throw new Error('Gemini API rate limited after 3 retries')
-```
+### Fallback Behavior
+1. **429 (rate limit):** Retries same model with exponential backoff up to 3 times, then falls back to next model
+2. **503 (service unavailable):** Immediately falls back to next model
+3. **Network error:** Retries same model up to 3 times, then falls back
+4. **Invalid/empty response:** Falls back to next model
+5. **All models exhausted:** Throws `Error('All Gemini models failed (…)')`
 
 ### Configuration
-- **Max retries:** 3
-- **Delays:** 2s, 4s, 8s (exponential backoff)
-- **Only retry:** 429 status (rate limit)
-- **Other errors:** Throw immediately
+- **Fallback models:** gemini-2.5-flash, gemini-2.5-pro, gemini-3-flash-preview, gemini-3.1-pro-preview
+- **Max retries per model:** 3
+- **Retry delays:** 2s, 4s, 8s (exponential backoff)
+- **Retry on:** 429 status and network errors
 
 ---
 
@@ -105,16 +91,11 @@ Gemini sometimes includes literal newlines in JSON strings, causing parse errors
 
 ## Model Selection
 
-| Use Case | Model | Reason |
-|----------|-------|--------|
-| Chat (Kintsu) | gemini-2.5-flash | Speed, cost |
-| Matchmaking | gemini-2.5-flash | Speed, cost |
-| AI Interjections (evaluation) | gemini-2.5-flash | Speed prioritized |
-| AI Interjections (generation) | gemini-2.5-flash | Speed prioritized |
-| Meetup suggestions | gemini-2.5-flash | Speed, cost |
-| Evaluation (scoring) | gemini-2.5-pro | Accuracy (future) |
+| Use Case | Primary Model | Fallback Chain |
+|----------|--------------|----------------|
+| All Gemini calls | gemini-2.5-flash | → gemini-2.5-pro → gemini-3-flash-preview → gemini-3.1-pro-preview |
 
-**Current:** All use Flash for consistency. Pro reserved for future precision needs.
+All calls use gemini-2.5-flash as primary. On failure, models are tried in the fallback chain order via `lib/gemini.ts`.
 
 ---
 
@@ -184,21 +165,24 @@ try {
 
 ## API Endpoint
 
-### Gemini 2.5 Flash
+All models use the same base URL pattern:
 ```
-https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={apiKey}
+https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={apiKey}
 ```
 
-### Gemini 2.5 Pro
-```
-https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key={apiKey}
-```
+Available models (in fallback order):
+- `gemini-2.5-flash` (primary)
+- `gemini-2.5-pro`
+- `gemini-3-flash-preview`
+- `gemini-3.1-pro-preview`
 
 ---
 
 ## Acceptance Criteria
 
-- [ ] All Gemini calls use exponential backoff retry (3 attempts)
+- [ ] All Gemini calls use shared `callGemini()` from `lib/gemini.ts`
+- [ ] Model fallback chain: flash → pro → gemini-3-flash → gemini-3.1-pro on 503/errors
+- [ ] Per-model exponential backoff retry (3 attempts) for 429 rate limits
 - [ ] JSON responses sanitized before parsing (newline fix)
 - [ ] All AI logs prefixed with feature name
 - [ ] Non-blocking AI calls catch errors and continue
