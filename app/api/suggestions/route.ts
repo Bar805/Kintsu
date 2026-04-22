@@ -1,60 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
+import { callGemini } from '@/lib/gemini'
 
-// ─── Helper: Call Gemini ─────────────────────────────────────────────────────
+// ─── Suggestion schema ─────────────────────────────────────────────────────
 
-async function callGemini(systemPrompt: string, userPrompt: string): Promise<string> {
-    const apiKey = process.env.GOOGLE_API_KEY
-    if (!apiKey) throw new Error('GOOGLE_API_KEY not set')
-
-    const body = JSON.stringify({
-        system_instruction: { parts: [{ text: systemPrompt }] },
-        contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
-        generationConfig: {
-            temperature: 0.9,
-            responseMimeType: "application/json",
-            responseSchema: {
-                type: "OBJECT",
-                properties: {
-                    suggestions: {
-                        type: "ARRAY",
-                        description: "Exactly 2 text message suggestions",
-                        items: {
-                            type: "STRING"
-                        }
-                    }
-                },
-                required: ["suggestions"]
-            }
-        },
-    })
-
-    for (let attempt = 0; attempt < 3; attempt++) {
-        const res = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
-            { method: 'POST', headers: { 'Content-Type': 'application/json' }, body }
-        )
-        if (res.status === 429) {
-            const wait = Math.pow(2, attempt + 1) * 1000
-            console.warn(`[suggestions] Gemini rate limited (attempt ${attempt + 1}/3), retrying in ${wait}ms`)
-            await new Promise(r => setTimeout(r, wait))
-            continue
+const SUGGESTION_SCHEMA = {
+    type: "OBJECT",
+    properties: {
+        suggestions: {
+            type: "ARRAY",
+            description: "Exactly 2 text message suggestions",
+            items: { type: "STRING" }
         }
-        if (!res.ok) throw new Error(`Gemini HTTP ${res.status}: ${await res.text()}`)
-        const text = await res.text()
-        let data
-        try {
-            data = JSON.parse(text)
-        } catch (e) {
-            console.error('[suggestions] Valid JSON check failed. Raw response:', text)
-            throw new Error(`Gemini response not valid JSON (len=${text.length}): ${e instanceof Error ? e.message : String(e)}`)
-        }
-
-        let innerText = data?.candidates?.[0]?.content?.parts?.[0]?.text
-        if (!innerText) throw new Error('No response from AI')
-        return innerText
-    }
-    throw new Error('Gemini API rate limited after 3 retries')
+    },
+    required: ["suggestions"]
 }
 
 // ─── Prompts ─────────────────────────────────────────────────────────────────
@@ -172,7 +131,7 @@ export async function GET(req: NextRequest) {
                 ? `User profiles:\n${profileContext}\n\nGenerate 2 icebreaker opening messages for You to send.`
                 : 'Generate 2 natural icebreaker opening messages.'
 
-            raw = await callGemini(ICEBREAKER_PROMPT, userPrompt)
+            raw = await callGemini({ systemPrompt: ICEBREAKER_PROMPT, prompt: userPrompt, responseSchema: SUGGESTION_SCHEMA, logPrefix: '[suggestions]' })
         } else {
             // ── REPLY MODE ───────────────────────────────────────────────────
             const orderedMessages = [...(messages || [])].reverse()
@@ -191,7 +150,7 @@ export async function GET(req: NextRequest) {
                 ? `\n\nUser's previous messages for style reference:\n${userOwnMessages.slice(-5).map(m => `- "${m}"`).join('\n')}`
                 : ''
 
-            raw = await callGemini(REPLY_PROMPT, `Recent chat:\n${chatLog}${styleNote}`)
+            raw = await callGemini({ systemPrompt: REPLY_PROMPT, prompt: `Recent chat:\n${chatLog}${styleNote}`, responseSchema: SUGGESTION_SCHEMA, logPrefix: '[suggestions]' })
         }
 
         console.log('[suggestions] Gemini raw:', raw)

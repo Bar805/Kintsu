@@ -3,6 +3,7 @@
 import { createClient } from '@/utils/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { TRIO_CONFIG } from '@/lib/trio-config'
+import { callGemini } from '@/lib/gemini'
 
 export interface UserProfile {
     id: string
@@ -39,9 +40,6 @@ export async function evaluateConversationState(conversationId: string, profiles
 
     // 2. Call Judge AI
     try {
-        const apiKey = process.env.GOOGLE_API_KEY
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`
-
         const profileContext = profiles.map(p => {
             const parts: string[] = []
             if (p.gender) parts.push(p.gender)
@@ -64,28 +62,9 @@ export async function evaluateConversationState(conversationId: string, profiles
         Return ONLY a JSON object: { "score": number, "reason": "string" }
         `
 
-        const response = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                contents: [{ parts: [{ text: prompt }] }],
-                generationConfig: { responseMimeType: "application/json" }
-            })
-        })
+        const text = await callGemini({ prompt, logPrefix: '[ai]' })
 
-        if (!response.ok) return false
-
-        const textRaw = await response.text()
-        let data
-        try {
-            data = JSON.parse(textRaw)
-        } catch (e) {
-            console.error("[ai] Valid JSON check failed. Raw response:", textRaw)
-            return false
-        }
-        const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "{}"
         const result = JSON.parse(text)
-
         console.log("Trio Judge Result:", result)
 
         return result.score >= TRIO_CONFIG.INTERJECTION_THRESHOLD
@@ -176,42 +155,20 @@ export async function generateTrioResponse(conversationId: string, profiles?: Us
 
     // 3. Call AI
     try {
-        const apiKey = process.env.GOOGLE_API_KEY
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`
+        const responseText = await callGemini({
+            systemPrompt: TRIO_CONFIG.SYSTEM_PROMPT,
+            prompt: `
+                USER PROFILES:
+                ${profileContext}
 
-        const response = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                contents: [{
-                    parts: [{
-                        text: `
-                        ${TRIO_CONFIG.SYSTEM_PROMPT}
+                CHAT HISTORY:
+                ${conversationScript}
 
-                        USER PROFILES:
-                        ${profileContext}
-
-                        CHAT HISTORY:
-                        ${conversationScript}
-                        
-                        Respond to the conversation as Trio.
-                        `
-                    }]
-                }]
-            })
+                Respond to the conversation as Trio.
+            `,
+            logPrefix: '[ai]',
+            responseMimeType: 'text/plain',
         })
-
-        if (!response.ok) throw new Error(`API Error: ${response.status}`)
-
-        const textRaw = await response.text()
-        let data
-        try {
-            data = JSON.parse(textRaw)
-        } catch (e) {
-            console.error('[ai] Valid JSON check failed. Raw response:', textRaw)
-            throw new Error(`API Error: Invalid JSON`)
-        }
-        const responseText = data.candidates?.[0]?.content?.parts?.[0]?.text || ""
         console.log('[ai] Generated response text:', responseText ? `"${responseText.substring(0, 100)}..."` : '(empty)')
 
         // 4. Save Response using ADMIN CLIENT (Bypass RLS)

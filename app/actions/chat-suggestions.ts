@@ -2,6 +2,7 @@
 
 import { createClient } from '@/utils/supabase/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
+import { callGemini } from '@/lib/gemini'
 
 // ─── Helper: Admin client ────────────────────────────────────────────────────
 
@@ -11,56 +12,6 @@ function getAdminClient() {
         process.env.SUPABASE_SERVICE_ROLE_KEY!,
         { auth: { autoRefreshToken: false, persistSession: false } }
     )
-}
-
-// ─── Helper: Call Gemini ─────────────────────────────────────────────────────
-
-async function callGemini(systemPrompt: string, userPrompt: string, schema?: any): Promise<string> {
-    const apiKey = process.env.GOOGLE_API_KEY
-    if (!apiKey) throw new Error('GOOGLE_API_KEY not set')
-
-    const body = JSON.stringify({
-        system_instruction: { parts: [{ text: systemPrompt }] },
-        contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
-        generationConfig: {
-            temperature: 0.9,
-            responseMimeType: 'application/json',
-            ...(schema ? { responseSchema: schema } : {})
-        },
-    })
-
-    // Retry with backoff for rate limits
-    for (let attempt = 0; attempt < 3; attempt++) {
-        const res = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
-            {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body,
-            }
-        )
-
-        if (res.status === 429) {
-            const wait = Math.pow(2, attempt + 1) * 1000
-            console.log(`Gemini rate limited (suggestions, attempt ${attempt + 1}/3), retrying in ${wait}ms...`)
-            await new Promise(r => setTimeout(r, wait))
-            continue
-        }
-
-        const text = await res.text()
-        let data
-        try {
-            data = JSON.parse(text)
-        } catch (e) {
-            console.error('[chat-suggestions] Valid JSON check failed. Raw response:', text)
-            throw new Error(`Gemini response not valid JSON: ${e instanceof Error ? e.message : String(e)}`)
-        }
-        let innerText = data?.candidates?.[0]?.content?.parts?.[0]?.text
-        if (!innerText) throw new Error('No response from AI')
-        return innerText
-    }
-
-    throw new Error('Gemini API rate limited after 3 retries')
 }
 
 // ─── 1. Generate Meetup Suggestion ──────────────────────────────────────────
@@ -209,9 +160,12 @@ export async function generateMeetupSuggestion(
         }
 
         const searchRaw = await callGemini(
-            MEETUP_SEARCH_PROMPT,
-            `Profiles:\n${profileInfo}\n\nRecent chat:\n${chatLog}`,
-            searchSchema
+            {
+                systemPrompt: MEETUP_SEARCH_PROMPT,
+                prompt: `Profiles:\n${profileInfo}\n\nRecent chat:\n${chatLog}`,
+                responseSchema: searchSchema,
+                logPrefix: '[meetup]',
+            }
         )
         const searchSanitized = searchRaw.replace(/"(?:[^"\\]|\\.)*"/g, m => m.replace(/\n/g, '\\n').replace(/\r/g, '\\r'))
         const searchResult = JSON.parse(searchSanitized) as { queries: string[]; locationContext: string }
@@ -257,9 +211,12 @@ export async function generateMeetupSuggestion(
         }
 
         const synthRaw = await callGemini(
-            MEETUP_SYNTHESIZE_PROMPT,
-            `Profiles:\n${profileInfo}\n\nRecent chat:\n${chatLog}\n\nVERIFIED VENUES:\n${venueListForAI}`,
-            synthesizeSchema
+            {
+                systemPrompt: MEETUP_SYNTHESIZE_PROMPT,
+                prompt: `Profiles:\n${profileInfo}\n\nRecent chat:\n${chatLog}\n\nVERIFIED VENUES:\n${venueListForAI}`,
+                responseSchema: synthesizeSchema,
+                logPrefix: '[meetup]',
+            }
         )
         const synthSanitized = synthRaw.replace(/"(?:[^"\\]|\\.)*"/g, m => m.replace(/\n/g, '\\n').replace(/\r/g, '\\r'))
         const synthResult = JSON.parse(synthSanitized) as { message: string }
